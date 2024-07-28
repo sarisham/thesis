@@ -1,0 +1,4 @@
+"0","library(tidyverse)  # Conjunto de paquetes para manipulación de datos"
+"0","library(skimr)      # Paquete para análisis exploratorio"
+"0","library(DataExplorer)  # Paquete para análisis exploratorio visual"
+"0",""

@@ -1,0 +1,966 @@
+---
+title: "THESIS"
+output: html_document
+date: "2024-07-24"
+---
+no sé cómo hacer la imputación porque me da error, supuestamente porque utilizo un método binario/ordinal para variables de ese tipo, pero usando base de datos que tiene variables de todo tipo. Cuando uso cart (que vale para todo tipo de variables) no tengo ese problema. Entonces, cómo lo hago? 
+- las dejo todas como numéricas, y hago la imputación así?
+- imputo todo con cart?
+- imputo cada variable con su tipo?
+
+```{r}
+library(tidyverse)  # Conjunto de paquetes para manipulación de datos
+library(skimr)      # Paquete para análisis exploratorio
+library(DataExplorer)  # Paquete para análisis exploratorio visual
+library(labelled)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(forcats)
+
+library(haven)
+library(memisc) #dezcription function
+library(DataExplorer)
+library(caret) #Test and training data sets
+library(FactoMineR)
+library(factoextra)
+library(mice)
+library(missMDA)
+library(cowplot)
+library(cv)
+
+library(janitor)  # For tabyl function
+library(pdftools)
+
+
+```
+
+```{r}
+# Cargar los datos
+pamplona_spss <- as.data.frame(read_sav("23-085 - Ayuntamiento de Navarra (SPSS01).sav"))
+delitos <- pdf_text("Balance-de-Criminalidad-Cuarto-Trimestre-2022.pdf")[462]
+
+```
+
+igualmente no sé cómo incluiría estos datos porque son a nivel municipal y no individual como los de encuesta.
+```{r}
+# Define la ruta al archivo PDF
+delitos <- pdf_text("Balance-de-Criminalidad-Cuarto-Trimestre-2022.pdf")[462]
+
+```
+
+```{r}
+lines <- strsplit(delitos, 
+                  "\n")[[1]]
+lines <- lines[lines != "" & !grepl("^\\s+$", 
+                                    lines)]
+split_lines <- strsplit(lines, 
+                        "\\s{2,}")
+
+data <- do.call(rbind, 
+                split_lines[7:length(split_lines)])
+
+delitos <- data.frame(data[, c(2, 5)]) 
+colnames(delitos) <- c("tipo_penal", "n")
+
+
+delitosf <- delitos |> 
+  mutate(tipo_penal = str_remove(tipo_penal, 
+                                 "^\\d+\\.\\s*-?\\s*"),
+         year = "2022") |>
+  filter(!tipo_penal %in% c("Municipio de Pamplona/Iruña", 
+                            "TIPOLOGÍA PENAL", 
+                            "I. CRIMINALIDAD CONVENCIONAL",
+                            "II. CIBERCRIMINALIDAD (infracciones penales cometidas en/por medio ciber)",
+                            "Estafas informáticas", 
+                            "Otros ciberdelitos", 
+                            "III. TOTAL CRIMINALIDAD"),
+         !str_detect(tipo_penal, 
+                     "^(5\\.1|5\\.2|7\\.1)\\.-"), 
+         !str_detect(tipo_penal, 
+                     "[0-9].*[A-Za-z]|[A-Za-z].*[0-9]"),
+         !str_detect(n, 
+                     "[A-Za-z]"),
+         !n == "0") |> 
+  mutate(n = as.numeric(str_replace_all(n, 
+                                        "[,\\.]", "")),  # Eliminar separadores de miles
+         tipo_penal = case_when(
+         tipo_penal %in% c("Homicidios dolosos y asesinatos consumados", 
+                          "Homicidios dolosos y asesinatos en grado tentativa") ~ "homicidios",
+         tipo_penal %in% "Delitos graves y menos graves de lesiones y riña tumultuaria" ~ "lesiones",
+         tipo_penal %in% c("Robos con violencia e intimidación", 
+                          "Robos con fuerza en domicilios, establecimientos y otras instalaciones", 
+                          "Hurtos", 
+                          "Sustracciones de vehículos") ~ "robos",
+         tipo_penal %in% "Resto de criminalidad CONVENCIONAL" ~ "otros",
+         TRUE ~ tipo_penal)) |> 
+  group_by(tipo_penal) |> 
+  summarise(n = sum(n, na.rm = TRUE), .groups = 'drop') %>%
+  mutate(year = 2022)
+
+```
+
+# DATA CLEANING AND PREPROCESSING
+
+```{r}
+# Reemplazar los valores 98 y 99 por NA. 
+pamplona_spss[pamplona_spss == 98 | pamplona_spss == 99 | pamplona_spss == 999] <- NA
+
+```
+
+-   Limpiar atributos SPSS
+
+```{r}
+# Convertir variables etiquetadas a factores con etiquetas descriptivas
+pamplona <- pamplona_spss |> 
+  mutate(across(where(is.labelled), 
+                ~ as_factor(.)))
+
+# Remover atributos innecesarios
+remove_unnecessary_attributes <- function(df) {
+  for (col in names(df)) {
+    attr(df[[col]], 
+         "label") <- NULL
+    attr(df[[col]], 
+         "format.spss") <- NULL
+    # Mantener las etiquetas (labels)
+  }
+  return(df)
+}
+
+pamplona <- remove_unnecessary_attributes(pamplona)
+
+
+# Convertir factores de vuelta a factores con valores numéricos originales
+convert_to_numeric_factor <- function(column) {
+  if (is.factor(column)) {
+    levels(column) <- as.character(1:length(levels(column)))
+    factor(as.numeric(column))
+  } else {
+    column
+  }
+}
+
+# para trabajar con los valores numricos de las categorias de los factores
+pamplona <- pamplona %>%
+  mutate(across(where(is.factor), 
+                convert_to_numeric_factor))
+
+# si quiero volver a los numericos solo tengo que aplicar la función del prinicpio de este chunk
+
+```
+
+-   recodificar nacimiento: 1. españa, 2. otros
+
+```{r}
+# Convertir los nombres de todas las variables a minúsculas
+names(pamplona) <- tolower(names(pamplona))
+
+# Crear y limpiar la nueva variable nP4
+pamplona <- pamplona |> 
+  mutate(np4 = case_when(
+           p4 %in% c(1, 2, 3) ~ 1,
+           !is.na(p4_otros) & p4_otros != "-" ~ 2,
+           TRUE ~ as.numeric(as.character(p4))  # mantener otros valores P4 si hay
+         ),
+    p17_otros = na_if(p17_otros, 
+                      "-")) |> # convertir "-" en NA en p17_otros
+  relocate(np4, 
+           .before = p4)
+
+```
+
+## Feature selection
+-  eliminar variables no necesarias. renombrar algunas variables
+
+```{r}
+pamplona <- pamplona |> 
+  dplyr::select(-c("estudio", 
+                   "registro",
+                   "p1",
+                   "zona",
+                   "p3_cod",
+                   "p4",
+                   "p4_otros")) |> 
+  dplyr::rename(barrio = p1a,
+                gender = p2,
+                age = p3,
+                nationality = np4,
+                employment = p20,
+                education = p21,
+                income = p22)
+
+```
+
+- Convertir las variables a factores, ordinales y numéricas según corresponda
+
+```{r}
+# Binary variables
+binary_vars <- c("gender", 
+                 "p5_1", "p5_2", "p5_3", 
+                 "p5_4", "p5_5", "p5_6", 
+                 "p5_7", "p5_8",
+                 "p6_1", "p6_2", "p6_3",
+                 "p8", 
+                 "p9", 
+                 "p16")
+
+pamplona[binary_vars] <- lapply(pamplona[binary_vars], 
+                                as.factor)
+
+# Variables ordinales (trabajando con números)
+ordinal_vars <- c("p7_1", "p7_2", "p7_3", 
+                  "p7_4", "p7_5", "p7_6", 
+                  "p7_7", "p7_8", 
+                  "p10_1", "p10_2", "p10_3", 
+                  "p10_4", "p10_5", "p10_6", 
+                  "p10_7",
+                  "p12", 
+                  "p15", 
+                  "p19", 
+                  "education", 
+                  "income")
+
+pamplona[ordinal_vars] <- lapply(pamplona[ordinal_vars], 
+                                 function(x) factor(x, 
+                                                    ordered = TRUE))
+
+# Variables categóricas
+categorical_vars <- c("barrio", 
+                      "nationality",
+                      "p13a", "p13b",
+                      "p18", 
+                      "employment")
+
+pamplona[categorical_vars] <- lapply(pamplona[categorical_vars], 
+                                     as.factor)
+
+# Variables numéricas
+numeric_vars <- c("age",
+                  "p11_1", "p11_2",
+                  "p14")
+
+pamplona[numeric_vars] <- lapply(pamplona[numeric_vars], 
+                                 as.numeric)
+
+```
+
+## Missing values
+```{r}
+# See % of missing values per variable
+sapply(pamplona, 
+       function(x) sum(is.na(x))*100/nrow(pamplona))
+
+# Remove variables with more than 40% NA
+pamplona <- pamplona |> 
+  dplyr::select(-c("p17", 
+                   "p17_otros"))
+
+```
+
+"Given the different data types (binary, ordinal, nominal, numeric), it is generally advisable to impute each type separately to ensure that the methods are appropriate for the data type. However, if you face issues with mixed data types or find that a unified approach (like using cart) works without errors, that can be a pragmatic solution. Here's the decision-making process:
+
+Consistency Across Types: Using different methods (e.g., logreg for binary, polr for ordinal, pmm for numeric) is ideal for accuracy. However, if this leads to complications or errors, and the cart method successfully imputes all types, then using cart could be a practical alternative.
+Unified Approach with cart: The cart method (Classification and Regression Trees) is versatile and can handle different types of data, which makes it a safe choice when mixed data types are present."
+
+"Imputation Steps with cart
+Since using cart works without issues:
+
+Advantages: It avoids the complexity of matching methods to data types and potential errors from inappropriate method applications.
+Considerations: While cart can impute different types of variables, be mindful of the interpretation, as it may treat all data as numeric-like under the hood, which could influence how categorical relationships are modeled."
+
+"Handling NAs and Outliers: Your approach to NA values and outliers (such as converting specific values to NA) is crucial. Make sure to document these transformations thoroughly."
+
+"Bivariate Analysis: Your use of chi-square tests, t-tests, and ANOVA is appropriate for exploring relationships between variables. Ensure that assumptions for these tests (like normality for t-tests) are met or note any deviations."
+
+```{r}
+vars_cat <- pamplona |> 
+  dplyr::select(-c(is.numeric))
+
+# cambiar lo de vars with na
+mice_imputed <- data.frame(
+  original = vars_cat$p6_3,
+  imputed_cart = complete(mice(vars_cat, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$p6_3)
+
+# Imputation methods: plotting resuls 
+variables <- c("original", 
+               "imputed_cart")
+titles <- c("Distribution", 
+            "Cart-imputed distribution")
+colors_fill <- c("skyblue", 
+                 "#15ad4f")
+colors_border <- c("skyblue3", 
+                   "#808080")
+
+# Initialize an empty plot list for the new plots
+plots <- list()
+
+# Loop through the updated variables to create plots
+for (i in 1:length(variables)) {
+  plots[[i]] <- ggplot(mice_imputed, 
+                       aes(x = .data[[variables[i]]])) +
+    geom_bar(fill = colors_fill[i], 
+             color = colors_border[i], 
+             position = "identity") +
+    ggtitle(titles[i]) +
+    theme_classic()
+}
+
+# Combine the new set of plots into a grid
+plot_grid(plotlist = plots, 
+          nrow = 2, 
+          ncol = 2)
+```
+
+### Cross validation
+Cross-validation is applied to validate this imputation model (why). This involves partitioning the data into training and test sets multiple times to assess the stability and accuracy of the imputation. Then, we will check post-imputation data distributions:
+
+ah alright so from the crossvalidaation i dont need to get a new dataset with the imputed data, but rather compare the variability across the resulting cross by checking different parameters and see how consistent they are, right? after that, once we have determined consistency/robustness we can actually use (or not) cart to impute de data. right?
+es, exactly. The primary purpose of cross-validation in the context of imputation is to assess the consistency and robustness of the imputation method. Here's a step-by-step outline:
+
+Cross-Validation Process:
+
+- Split the Data: The dataset is divided into multiple folds. For each fold, a subset of the data is used as the training set (to perform imputation), and the remaining subset is used as the test set.
+- Impute Missing Data: For each fold, the missing data in the training set is imputed using the selected method (e.g., cart).
+- Assess Imputation Consistency: After imputing, we compare the imputed values across different folds. Consistency across folds suggests that the method is robust and reliable.
+Evaluating Consistency:
+
+"Parameter Checking: Look at various parameters or metrics that are critical to your analysis. For example, you can check the mean, standard deviation, or distribution of imputed values across different folds.
+Bias and Variance: Assess whether the imputed values are systematically biased (e.g., consistently higher or lower than expected) or have high variance across folds".
+
+
+```{r}
+library(mice)
+library(caret)  # For cross-validation
+
+# Function for cross-validation using MICE
+# Function for cross-validation using MICE
+cv_mice <- function(data, method, n_folds = 5, seed = 123) {
+  set.seed(seed)
+  folds <- createFolds(seq_len(nrow(data)), k = n_folds)
+  
+  results <- lapply(folds, function(fold) {
+    train_data <- data[-fold, ]
+    test_data <- data[fold, ]
+    
+    imputed_train <- mice(train_data, m = 2, method = method, seed = seed)
+    complete_train <- complete(imputed_train, 1)  # Use the first imputed dataset
+    
+    list(train = complete_train, test = test_data)
+  })
+  
+  results
+}
+
+# Apply cross-validation for `cart` method
+cv_results_cart <- cv_mice(pamplona, 
+                           method = "cart")
+
+```
+
+In order to compare the resulting distributions...
+
+1. Extract Imputed Values Across Folds
+First, extract the imputed datasets from each fold and compare them:
+```{r}
+# Extract imputed values from each fold
+imputed_datasets <- lapply(cv_results_cart, 
+                           function(res) res$train)
+
+# Combine imputed data into one data frame for analysis
+# Note: Ensure the imputed datasets have the same structure
+combined_imputed_data <- do.call(rbind, 
+                                 imputed_datasets)
+
+```
+
+2. Calculate Variability Across Imputed Values
+
+2.1. For numeric variables: 
+You can calculate statistics like the mean, standard deviation, and other relevant metrics for each variable to see how consistent the imputed values are across different folds.
+```{r}
+# Example: Analyzing variability for a specific variable
+analyze_variability <- function(imputed_data, variable_name) {
+  # Extract the specific variable across all imputed datasets
+  imputed_values <- combined_imputed_data[[variable_name]]
+  
+  # Calculate mean and standard deviation across folds
+  mean_value <- mean(imputed_values, 
+                     na.rm = TRUE)
+  sd_value <- sd(imputed_values, 
+                 na.rm = TRUE)
+  
+  list(mean = mean_value, 
+       sd = sd_value)
+}
+
+# Analyzing variability for the "age" variable as an example
+variability_age <- analyze_variability(combined_imputed_data, 
+                                       "age")
+print(variability_age)
+
+```
+2.2. Analyzing variability for categorical variableS:
+For categorical variables, we typically use frequency tables and visualizations like bar plots to analyze the consistency and variability of the imputed values.
+
+Calculate Frequency Distributions
+To assess the variability, you can calculate the frequency distribution of each category in the imputed data and compare it with the original data
+```{r}
+# Function to calculate and compare frequency distributions
+compare_frequency_distributions <- function(original_data, imputed_data, variable_name) {
+  # Frequency table for original data
+  original_freq <- table(original_data[[variable_name]], 
+                         useNA = "ifany")
+  original_freq <- original_freq / sum(original_freq)  # Convert to proportions
+  
+  # Frequency table for imputed data
+  imputed_freq <- table(imputed_data[[variable_name]], 
+                        useNA = "ifany")
+  imputed_freq <- imputed_freq / sum(imputed_freq)  # Convert to proportions
+  
+  list(original = original_freq, 
+       imputed = imputed_freq)
+}
+
+# Example for variable "p18" which is categorical
+freq_distributions_p18 <- compare_frequency_distributions(pamplona,
+                                                          combined_imputed_data, 
+                                                          "p18")
+print(freq_distributions_p18)
+
+```
+
+
+3. Visualize Distribution of Imputed Values to see if there are any significant differences across folds.
+3.1. Numeric variables
+```{r}
+# Visualize normalized distribution of imputed values for a specific variable
+plot_imputed_distribution_normalized <- function(imputed_data, variable_name) {
+  ggplot(imputed_data, aes_string(x = variable_name)) +
+    geom_histogram(aes(y = ..density..),  # Use density for normalization
+                   binwidth = 1, 
+                   fill = "blue", 
+                   color = "black", 
+                   alpha = 0.7) +
+    labs(title = paste("Normalized Distribution of Imputed", 
+                       variable_name),
+         x = variable_name, 
+         y = "Density") +
+    theme_minimal()
+}
+
+# Plot for the "age" variable as an example
+plot_imputed_distribution_normalized(combined_imputed_data, 
+                                     "age")
+
+```
+
+```{r}
+# Compare original vs imputed data for a variable with normalized values
+compare_original_imputed_normalized <- function(original_data, imputed_data, variable_name) {
+  original_values <- original_data[[variable_name]]
+  imputed_values <- imputed_data[[variable_name]]
+  
+  # Plot comparison using density for normalization
+  ggplot() +
+    geom_histogram(aes(x = original_values, y = ..density..), 
+                   fill = "skyblue", 
+                   alpha = 0.5, 
+                   binwidth = 1) +
+    geom_histogram(aes(x = imputed_values, y = ..density..), 
+                   fill = "orange", 
+                   alpha = 0.5, 
+                   binwidth = 1) +
+    labs(title = paste("Normalized Comparison of Original and Imputed", 
+                       variable_name),
+         x = variable_name, 
+         y = "Density") +
+    theme_minimal()
+}
+
+# Comparing for the "age" variable as an example
+compare_original_imputed_normalized(pamplona, 
+                                    combined_imputed_data, 
+                                    "age")
+
+```
+
+3.2. Visualizing Categorical Data Distribution
+Plotting Bar Charts for Categorical Data
+For categorical data, use bar charts to compare the original and imputed distributions.
+
+could this be due to the fact that the combined imputed data, after the cross validation process, has 4095 observations, whereas the original dataset has only 828? because although the frequencies are diff., the distributions seems quite similar
+
+
+You're correct in observing that the frequencies in the bar plot appear different, which can indeed be attributed to the difference in the number of observations between the original and imputed datasets. In cross-validation, when you combine imputed data from all folds, you effectively increase the number of observations because you're aggregating data across multiple folds.
+
+Understanding the Impact of Cross-Validation on Data Size
+Original vs. Combined Data Size:
+
+The original dataset has 828 observations.
+The combined imputed dataset from cross-validation has 4095 observations, likely due to combining imputed datasets from each fold, resulting in a higher total count.
+Proportional Comparison:
+
+The visual difference in bar heights is due to the different number of observations rather than a change in the relative distribution of categories. The proportions are consistent between the original and imputed datasets, as indicated by the quantitative data you provided.
+Normalizing the Data for Comparison
+To make a proper visual comparison, you should normalize the frequency counts to proportions (relative frequencies) instead of raw counts. This adjustment will make it easier to compare the distributions, regardless of the total number of observations in each dataset.
+- Normalized plot comparison 
+
+```{r}
+# Normalize the frequency counts to proportions
+plot_categorical_distribution_normalized <- function(original_data, imputed_data, variable_name) {
+  # Frequency tables
+  original_freq <- table(original_data[[variable_name]], 
+                         useNA = "ifany")
+  imputed_freq <- table(imputed_data[[variable_name]], 
+                        useNA = "ifany")
+  
+  # Convert to data frames for ggplot
+  original_df <- as.data.frame(prop.table(original_freq))
+  imputed_df <- as.data.frame(prop.table(imputed_freq))
+  colnames(original_df) <- c("Category", 
+                             "Proportion")
+  colnames(imputed_df) <- c("Category", 
+                            "Proportion")
+  
+  # Plotting
+  ggplot() +
+    geom_bar(data = original_df, 
+             aes(x = Category, 
+                 y = Proportion), 
+             stat = "identity", 
+             fill = "skyblue", 
+             alpha = 0.6) +
+    geom_bar(data = imputed_df, 
+             aes(x = Category, 
+                 y = Proportion), 
+             stat = "identity", 
+             fill = "orange", 
+             alpha = 0.4) +
+    labs(title = paste("Normalized Original vs Imputed Data Distribution for",
+                       variable_name),
+         x = variable_name, 
+         y = "Proportion") +
+    theme_minimal()
+}
+
+# Plot for the "p18" variable
+plot_categorical_distribution_normalized(pamplona, 
+                                         combined_imputed_data, 
+                                         "p18")
+
+```
+The normalization process corrects for differences in sample size, allowing you to focus on the shape and distribution of the data rather than absolute frequencies. This will help you confirm whether the imputation has maintained the relative proportions across categories or introduced any significant distortions.
+
+Since the imputed values are consistent and align well with the non-missing data, the method is considered robust and it is validated.Therefore, based on the consistency and robustness assessment, we decide  to proceed with cart for the final imputation of the entire dataset. 
+
+
+*Carrying out the imputation*:
+1. Imputation without Cross-Validation
+Imputing the entire dataset using cart without cross-validation is straightforward and often sufficient if:
+
+- Validation is Complete: You've already validated the cart method through previous cross-validation steps and found it robust and consistent.
+- Simplicity and Efficiency: This approach is simpler and faster, as it avoids the complexity of combining results from multiple folds.
+```{r}
+# Imputing based on cart
+pamplonaf <- complete(mice(pamplona, 
+                           m = 2, 
+                           method = "cart",
+                           seed = 123))
+
+```
+
+
+quería intentar la imputación con cross validation pero no sabía cómo manejar las 4095 observaciones resultantes (los dos códigos que intenté están en Thesis.rmd)
+
+# EXPLORATORY ANALYSIS
+
+## Descriptive analysis / univariate
+
+```{r}
+# Function to generate univariate analysis
+univariate_analysis <- function(data) {
+  for (col in colnames(data)) {
+   cat("Analysis for", col, "\n")
+    # Check if the column is numeric
+    if (is.numeric(data[[col]])) {
+      summary_stats <- summary(data[[col]])
+      print(summary_stats)
+      
+      # Set binwidth based on the variable
+      if (col == "age") {
+        bin_width <- 5  # Adjust bin width for the 'age' variable
+      } else {
+        num_unique_values <- length(unique(data[[col]]))
+        bin_width <- ifelse(num_unique_values <= 10, 1, 30 / num_unique_values)
+      }
+      
+      # Plot histogram
+      p <- ggplot(data, aes_string(x = col)) +
+        geom_histogram(binwidth = bin_width, fill = "blue", color = "black") +
+        theme_minimal() +
+        labs(title = paste("Histogram of", col), x = col, y = "Frequency")
+      print(p)
+      
+    } else if (is.factor(data[[col]]) || is.character(data[[col]])) {
+      # Convert character to factor if necessary
+      data[[col]] <- as.factor(data[[col]])
+      
+      # Frequency table
+      freq_table <- table(data[[col]])
+      print(freq_table)
+      
+      # Plot bar chart
+      p <- ggplot(data, aes_string(x = col)) +
+        geom_bar(fill = "blue") +
+        theme_minimal() +
+        labs(title = paste("Bar Plot of", col), x = col, y = "Count")
+      print(p)
+      
+    } else {
+      cat("Variable type not recognized or not supported.\n")
+    }
+    cat("\n\n")
+  }
+}
+
+# Call the function with your data
+univariate_analysis(pamplonaf)
+
+```
+
+- Now we focus in the variables we identified might be related to the *criminality index*. MIRAR SI INCLUIR LOS DATOS DE LA POLICÍA
+En el cuestionario, de esto se habla en: P5. Incidentes de robo y atraco, P6. Experiencias de violencia y acoso, P12. Percepción de degradación y delincuencia en el barrio, P16. Conflictos de convivencia en el barrio donde vive, P17. Motivos del conflicto en el barrio.
+
+```{r}
+crime_vars <- pamplonaf[, c("p5_1", "p5_2", "p5_3", 
+                            "p5_4", "p5_5", "p5_6",
+                            "p5_7", "p5_8",
+                            "p6_1", "p6_2", "p6_3",
+                            "p16")]
+
+univariate_analysis(crime_vars)
+
+```
+
+- Now the *perception index*
+En el cuestionario, de esto se habla en: P7: Percepción de seguridad en diferentes espacios, P9: Cambio de domicilio por inseguridad en el barrio, algunas de P10: Opiniones sobre la seguridad al caminar solo/a, evitar zonas, cámaras de seguridad, P11: Nivel de seguridad en barrio y ciudad, P12. Percepción de degradación y delincuencia en el barrio (tendría que decidir en qué índice incluyo esta variable). Quizás también P14: Valoración de los servicios de la Policía Municipal.
+
+
+```{r}
+perception_vars <- pamplonaf[, c("p7_1", "p7_2", "p7_3", 
+                            "p7_4", "p7_5", "p7_6",
+                            "p7_7", "p7_8",
+                            "p9", 
+                            "p10_1", "p10_2", 
+                            "p10_4", "p10_5", "p10_6", 
+                            "p11_1", "p11_2", #la del barrio no estoy segura
+                            "p12", 
+                            "p14")]
+
+univariate_analysis(perception_vars)
+
+```
+
+- those related to *self-protection strategies*
+```{r}
+protections_vars <- pamplonaf[, c("p8",
+                                  "p9",
+                                  "p10_3", 
+                                  "p10_7")]
+
+univariate_analysis(protections_vars)
+
+```
+
+
+
+### Data imbalance in 
+The data imbalance you've observed, where the "yes" category (representing incidents or perceptions of crime) is underrepresented, can pose challenges in your analysis, particularly in the context of creating an objective crime index. This imbalance can lead to biased models and incorrect interpretations if not addressed properly. Here are the key issues and potential solutions:
+
+Issues with Data Imbalance
+1. Biased Models: Machine learning models can become biased towards the majority class ("no" responses) because they are overrepresented. This can result in poor predictive performance for the minority class ("yes" responses), which is often the more critical class in this context.
+
+2. Misleading Metrics: Metrics such as accuracy can be misleading in imbalanced datasets. For example, a model that predicts the majority class for every observation would still achieve a high accuracy, despite failing to correctly predict the minority class.
+
+3. Limited Information on Minority Class: The underrepresentation of "yes" responses can lead to insufficient data to learn patterns or correlations for this class, which may be crucial for your index.
+
+Applying resampling techniques to all imbalanced variables can be useful, but it depends on the specific goals of your analysis and the nature of each variable. Here are some considerations to help you decide:
+
+1. Nature of the Variables and Their Role in the Index
+Critical Variables: If certain variables are critical for the calculation of your objective crime index (e.g., direct indicators of crime like incidents of theft, violence), ensuring these are well-represented in the dataset is essential. Resampling these variables can help improve the model's understanding and predictions regarding the occurrence of these incidents.
+
+Auxiliary Variables: For variables that provide supplementary information but are not central to the index, resampling may not be as crucial. The impact of these variables on the overall index may be limited, and excessive resampling could introduce noise or overfitting.
+
+2. Impact of Resampling on Analysis
+Dimensionality and Model Complexity: Over-resampling all variables can increase the dataset size significantly and may lead to overfitting, especially if the dataset becomes dominated by synthetic data. It can also make the model more complex and harder to interpret.
+
+Specific Analysis Requirements: If your analysis includes feature importance evaluation or building a predictive model, ensuring that key predictors are balanced might be more critical than balancing all variables. However, if the analysis focuses on descriptive statistics or correlations, the need for resampling may be less pressing.
+
+3. Evaluating the Imbalance's Impact
+Data Distribution Check: Evaluate the distribution of the minority class in each variable. If some variables have extremely low minority representation (e.g., less than 1%), they might need more aggressive resampling or specialized techniques like anomaly detection.
+
+Model Performance Metrics: Experiment with and without resampling for different variables and compare the performance metrics (e.g., precision, recall, F1-score) for each approach. This can provide insight into whether resampling is necessary for all variables or just a subset.
+
+4. Practical Approach
+Prioritize Key Variables: Start with resampling techniques for the most critical variables directly related to crime incidents (e.g., P5 and P6 variables). Evaluate the model's performance and the resulting index's reliability.
+
+Selective Resampling: If the initial results suggest that other imbalanced variables are influencing the index significantly, consider resampling those as well. This selective approach can help balance the need for comprehensive data representation with the risks of overfitting and increased complexity.
+
+Iterative Process: Treat this as an iterative process. Begin with a base model and progressively include resampling for additional variables as needed, based on model evaluation and index stability.
+
+
+
+#### Undersampling and oversampling
+
+```{r}
+library(ROSE)
+under <- ovun.sample(admit~., 
+                     data=train, 
+                     method = "under", 
+                     N = 192)$data
+table(under$admit)
+``` 
+
+
+
+
+## Bivariate analysis
+
+- correlation analysis for the numeric variables
+```{r}
+# Select numeric variables
+cor_data <- pamplonaf |> 
+  dplyr::select(where(is.numeric)) 
+
+# Step 2: Use findCorrelation() to identify highly correlated features
+correlation_matrix <- cor(cor_data)
+highly_correlated <- findCorrelation(correlation_matrix, 
+                                     cutoff = 0.70, 
+                                     exact = FALSE)
+
+# Step 3: Remove highly correlated features from the dataset
+selected_features <- cor_data[, -highly_correlated]
+
+# Getting the names of the selected features
+selected_features <- names(selected_features)
+
+# New sample dataset
+data_f <- pamplonaf |> 
+  dplyr::select(selected_features, p6_2)
+
+# Fitting a logistic regression model
+linear_model <- glm(p6_2 ~ ., data = data_f, family = binomial)
+summary(linear_model)
+
+```
+
+
+- contingency tables and chi-square tests as almost all the variables are categorical 
+```{r}
+# Function to generate contingency tables and perform chi-square tests
+bivariate_analysis <- function(df, var1, var2) {
+  # Create contingency table
+  contingency_table <- df |> 
+    tabyl(!!sym(var1), !!sym(var2)) |> 
+    adorn_percentages("col") |> 
+    adorn_pct_formatting(digits = 1) |> 
+    adorn_ns()
+  
+  # Perform chi-square test
+  chi_test <- chisq.test(table(df[[var1]], 
+                               df[[var2]]))
+  
+  # Return results
+  list(
+    var1 = var1,
+    var2 = var2,
+    contingency_table = contingency_table,
+    chi_square_test = chi_test
+  )
+}
+
+# Define the list of sociodemographic variables and the variable of interest
+sociodemographic_vars <- c("barrio", 
+                           "gender",  
+                           "education",
+                           "employment",
+                           "nationality", 
+                           "income")
+
+# Store the results in a list
+results_list <- lapply(sociodemographic_vars, function(var) {
+  bivariate_analysis(pamplonaf, var, "p5_1")
+})
+
+# Display results in separate "screens"
+for (result in results_list) {
+  cat("====================================================\n")
+  cat("Analysis between", result$var1, "and", result$var2, "\n")
+  cat("====================================================\n\n")
+  
+  cat("Contingency Table:\n")
+  print(result$contingency_table)
+  cat("\n")
+  
+  cat("Chi-Square Test Results:\n")
+  print(result$chi_square_test)
+  cat("\n\n")
+  
+  # Adding a pause for clarity if running interactively
+  # readline(prompt = "Press [Enter] to continue to the next analysis...")
+}
+
+```
+
+- t test analysis:
+
+```{r}
+# Example for visual inspection and normality test
+# Q-Q plot: Deviations from the line, especially in the tails, indicate departures from normality.
+qqnorm(pamplonaf$p11_1)
+
+# Histogram
+hist(pamplonaf$p11_1, breaks = 30, main = "Histogram of p11_1", xlab = "p11_1")
+
+# Shapiro-Wilk test
+  # h0: data is normally distributed. 
+  # p-value > 0.05: data is normally distributed.
+  # p-value ≤ 0.05: Reject H0, data is not normally distributed.
+shapiro.test(pamplonaf$p11_1)
+
+```
+```{r}
+# Levene's test. H0: variances are equal.
+  # p-value > 0.05: homogeneity of variances.
+  # p-value ≤ 0.05: heterogeneity of variances.
+
+library(car)
+leveneTest(p11_1 ~ gender, data = pamplonaf)
+
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(janitor)
+library(stats)
+
+# Function to perform t-test or ANOVA
+bivariate_numeric_analysis <- function(df, numeric_var, categorical_var) {
+  # Check the number of levels in the categorical variable
+  n_levels <- length(unique(df[[categorical_var]]))
+  
+  # Choose test based on the number of levels
+  if (n_levels == 2) {
+    # Perform t-test
+    test_result <- t.test(df[[numeric_var]] ~ df[[categorical_var]], 
+                          data = df)
+    test_type <- "T-test"
+  } else {
+    # Perform ANOVA
+    test_result <- aov(df[[numeric_var]] ~ df[[categorical_var]], 
+                       data = df)
+    test_type <- "ANOVA"
+  }
+  
+  # Return results
+  list(
+    numeric_var = numeric_var,
+    categorical_var = categorical_var,
+    test_type = test_type,
+    test_result = test_result
+  )
+}
+
+# Define the list of sociodemographic variables
+sociodemographic_vars <- c("barrio", 
+                           "gender", 
+                           "education", 
+                           "employment", 
+                           "nationality", 
+                           "income")
+
+# Numeric variables to analyze
+numeric_vars <- c("p11_1", "p11_2",
+                  "p14")
+
+# Store the results in a list
+results_list <- lapply(sociodemographic_vars, function(cat_var) {
+  lapply(numeric_vars, function(num_var) {
+    bivariate_numeric_analysis(pamplonaf, num_var, cat_var)
+  })
+})
+
+# Display results in separate "screens"
+for (result_set in results_list) {
+  for (result in result_set) {
+    cat("====================================================\n")
+    cat("Analysis between", result$numeric_var, "and", result$categorical_var, "\n")
+    cat("Test Type:", result$test_type, "\n")
+    cat("====================================================\n\n")
+    
+    if (result$test_type == "T-test") {
+      cat("T-test Results:\n")
+      cat("t-statistic:", result$test_result$statistic, "\n")
+      cat("Degrees of Freedom:", result$test_result$parameter, "\n")
+      cat("p-value:", result$test_result$p.value, "\n")
+      cat("Confidence Interval:", result$test_result$conf.int, "\n")
+      cat("Mean of Groups:", result$test_result$estimate, "\n")
+    } else if (result$test_type == "ANOVA") {
+      cat("ANOVA Results:\n")
+      print(summary(result$test_result))
+    }
+    
+    cat("\n\n")
+    # Adding a pause for clarity if running interactively
+    # readline(prompt = "Press [Enter] to continue to the next analysis...")
+  }
+}
+
+```
+
+
+# FEATURE ENGINEERING
+Feature Transformation:
+
+- Scaling and Normalization: Adjusting the scale of features to ensure they have a similar range, which can improve model performance, especially for algorithms that are sensitive to feature scaling.
+- Encoding Categorical Variables: Converting categorical features into numerical values that models can interpret, such as one-hot encoding or label encoding.
+
+Feature Selection:
+
+- Choosing Relevant Features: Identifying and selecting the most relevant features that contribute to the model's predictive power, often using techniques like correlation analysis, feature importance from models, or statistical tests.
+- Dimensionality Reduction: Techniques like Principal Component Analysis (PCA) or Feature Selection can reduce the number of features, simplifying the model and potentially improving performance.
+
+# REGRESSIONS 
+Lo de stats I q tengo q ver cómo llamarlo
+claro no puedo hacer lineales. tendrán q ser logaritmicas o alfgo asi
+
+
+# SUPERVISED MACHINE LEARNING
+## Principal Component Analysis (PCA)
+```{r}
+# PCA
+pamplonaf <- pamplonaf |> is.numeric()
+pca = prcomp(pamplonaf, scale = T) # scale is to standardize the data set.
+summary(pca)
+```
+
+## Clustering Analysis
+
+# UNSUPERVISED MACHINE LEARNING
+## Classification
+## Advanced regression
+
+# FINAL PREDICTIONS
+
+
+habrá que poner algo de validation y toda la movie
+
+
+

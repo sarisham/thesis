@@ -1,0 +1,10 @@
+"0","# Select numeric variables"
+"0","cor_data <- pamplona |> "
+"0","  dplyr::select(where(is.numeric)) "
+"0",""
+"0","# Step 2: Use findCorrelation() to identify highly correlated features"
+"0","correlation_matrix <- cor(cor_data)"
+"0","highly_correlated <- findCorrelation(correlation_matrix, cutoff = 0.70, exact = FALSE)"
+"2","Error in findCorrelation_fast(x = x, cutoff = cutoff, verbose = verbose) : 
+  The correlation matrix has some missing values.
+"

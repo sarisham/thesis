@@ -1,0 +1,10 @@
+"0","sampled_categorical_data <- sample_imputed_values_categorical(imputed_datasets, categorical_vars)
+"
+"2","Warning in base::cbind(...) :"
+"2","
+ "
+"2"," number of rows of result is not a multiple of vector length (arg 1)
+"
+"2","Error in `[[<-.data.frame`(`*tmp*`, var, value = c(""4"", ""4"", ""10"", ""4"",  : 
+  replacement has 664 rows, data has 663
+"

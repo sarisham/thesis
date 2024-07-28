@@ -1,0 +1,221 @@
+---
+title: "thesis3"
+output: html_document
+date: "2024-07-28"
+---
+
+```{r}
+perception_vars <- pamplonaf[, c("p7_2", "p7_3", 
+                            "p7_4", "p7_5", "p7_6",
+                            "p7_7", "p7_8",
+                            "p9", 
+                            "p10_1", "p10_2", 
+                            "p10_4", "p10_5", "p10_6", 
+                            "p11_1", "p11_2", #la del barrio no estoy segura
+                            "p12", 
+                            "p14")]
+
+univariate_analysis(perception_vars)
+
+```
+p9 quitar
+p7_1 la quito porque es en la casa. 
+
+# PCA
+
+
+Yes, you can convert ordinal factors with numeric levels (like 1, 2, 3, 4) to numeric for the purpose of creating a composite score. The key is to ensure that the ordinal nature is preserved when interpreting the results, but the arithmetic operations like mean can be performed on the numeric representations of these levels.
+
+Here's how you can safely convert the ordinal factors to numeric:
+
+Convert factors to numeric: Since the factors already represent ordinal categories with numeric levels, you can safely convert them.
+
+Calculate the composite score: Using rowMeans is appropriate, as it will handle the numeric data and give an average score.
+
+### P10_4,5,6 -> cameras
+
+```{r}
+# Convert factors or characters to numeric
+perception_vars$p10_1 <- as.numeric(as.character(perception_vars$p10_1))
+perception_vars$p10_2 <- as.numeric(as.character(perception_vars$p10_2))
+
+perception_vars$p10_4 <- as.numeric(as.character(perception_vars$p10_4))
+perception_vars$p10_5 <- as.numeric(as.character(perception_vars$p10_5))
+perception_vars$p10_6 <- as.numeric(as.character(perception_vars$p10_6))
+
+# Normalizamos p10_6 para que los valores más altos sean negativos (indicando una percepción negativa)
+perception_vars$normalized_p10_6 <- 5 - perception_vars$p10_6
+
+# Creamos la nueva variable compuesta. antes era indice_percepcion_camaras
+perception_vars$cam_index <- (perception_vars$p10_4 + perception_vars$p10_5) - perception_vars$normalized_p10_6
+
+# Calculamos el valor mínimo y máximo de la nueva variable compuesta
+min_val <- min(perception_vars$cam_index, 
+               na.rm = TRUE)
+max_val <- max(perception_vars$cam_index, 
+               na.rm = TRUE)
+
+# Normalización min-max para ajustar el rango a [1, 4]
+perception_vars$cam_index <- 1 + (perception_vars$cam_index - min_val) * (3 / (max_val - min_val))
+
+# reondeo a enteros
+perception_vars$cam_index <- round(perception_vars$cam_index)
+
+# Inspeccionamos la nueva variable normalizada
+table(perception_vars$cam_index)
+
+```
+La nueva variable compuesta cam_index tiene un rango de 1 a 4, donde los valores representan la percepción general de las personas sobre las cámaras de seguridad en términos de su adecuación, mejora de seguridad ciudadana y posible invasión de la intimidad. Dado que la escala se deriva de la combinación de varias percepciones, la interpretación de los extremos es la siguiente:
+
+1: Representa una percepción general negativa sobre las cámaras de seguridad. Las personas que obtuvieron esta puntuación tienden a no estar de acuerdo con la instalación de cámaras de seguridad, no creen que mejoren la seguridad ciudadana y/o sienten que invaden su intimidad.
+
+4: Representa una percepción general muy positiva sobre las cámaras de seguridad. Los encuestados con esta puntuación están en gran medida de acuerdo con la instalación de cámaras de seguridad, creen que estas mejoran la seguridad ciudadana y/o no sienten que invadan su intimidad.
+
+1: Percepción muy negativa o preocupación sobre las cámaras de seguridad.
+2: Percepción algo negativa.
+3: Percepción algo positiva.
+4: Percepción muy positiva
+
+### P10_1,2 -> seg global nocturna
+
+```{r}
+# Combinamos p10_1 y p10_2. antes era seguridad_global_noche
+perception_vars$night_security <- perception_vars$p10_1 + perception_vars$p10_2
+
+# Calculamos el valor mínimo y máximo de la nueva variable
+min_val_seguridad <- min(perception_vars$seguridad_global_noche,
+                         na.rm = TRUE)
+max_val_seguridad <- max(perception_vars$seguridad_global_noche, 
+                         na.rm = TRUE)
+
+# Normalización min-max para ajustar el rango a [1, 4]
+perception_vars$night_security <- 1 + (perception_vars$seguridad_global_noche - min_val_seguridad) * (3 / (max_val_seguridad - min_val_seguridad))
+
+# Redondeamos los valores normalizados a enteros
+perception_vars$night_security <- round(perception_vars$night_security)
+
+# Inspeccionamos la nueva distribución de frecuencias
+table(perception_vars$night_security)
+
+```
+
+### p11_1,2 ->
+
+```{r}
+# Suponiendo que las variables se llaman seguridad_barrio y seguridad_ciudad en el dataframe perception_vars
+perception_vars$global_security <- rowMeans(perception_vars[, c("p11_1", "p11_2")], 
+                                             na.rm = TRUE)
+
+# Redondeamos los valores normalizados a enteros
+perception_vars$global_security <- round(perception_vars$global_security)
+
+# Inspeccionamos la nueva variable
+table(perception_vars$global_security)
+
+```
+
+
+```{r}
+perception_vars <- perception_vars |> 
+  dplyr::select(-c("p10_1", "p10_2",
+                   "p10_4", "p10_5", "p10_6",
+                   "p11_1", "p11_2",
+                   "normalized_p10_6", "p14"))
+```
+
+```{r}
+# List of columns to be converted to factors
+factor_columns <- c('p7_2', 'p7_3', 'p7_4', 
+                    'p7_5', 'p7_6', 'p7_7', 
+                    'p7_8', 
+                    'p12')
+
+# Convert selected columns to factors
+perception_vars[factor_columns] <- lapply(perception_vars[factor_columns],
+                                          as.factor)
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(caret)
+
+options(contrasts = c("contr.treatment", "contr.treatment"))
+
+# Assuming data is in a data frame called df
+# Dummy encoding, dropping the first category as the reference
+percept_dummy <- model.matrix(~ . - 1, data = perception_vars)
+
+# Convert the result to a data frame
+percept_dummy <- as.data.frame(percept_dummy)
+
+# Normalizing the data
+df_normalized <- scale(percept_dummy)
+
+```
+
+```{r}
+# Calculate the correlation matrix
+correlation_matrix <- cor(percept_dummy)
+
+# Set a threshold for correlation; features with absolute correlation above this threshold are considered redundant
+correlation_threshold <- 0.75  # Adjust this threshold as needed
+
+# Find highly correlated features
+highly_correlated <- findCorrelation(correlation_matrix, cutoff = correlation_threshold)
+
+# Remove highly correlated features
+df_reduced <- percept_dummy[, -highly_correlated]
+
+```
+
+```{r}
+# Perform PCA
+pca_result <- prcomp(df_reduced, center = TRUE, scale. = TRUE)
+
+# View the proportion of variance explained by each principal component
+summary(pca_result)
+
+# Assuming the use of the car package
+# install.packages("car")
+library(car)
+df_reduced$dummy_target <- rnorm(nrow(df_reduced))  # Creating a dummy target
+
+# Fit a model to check for VIF
+vif_model <- lm(dummy_target ~ ., data = df_reduced)
+vif(vif_model)
+
+
+```
+
+```{r}
+# Assuming `pca_result` is the object returned from prcomp or a similar PCA function
+explained_variance <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+
+# Create the scree plot
+plot(explained_variance, type = "b", xlab = "Principal Component", ylab = "Proportion of Variance Explained", main = "Scree Plot")
+
+# Adding cumulative variance line
+cumulative_variance <- cumsum(explained_variance)
+lines(cumulative_variance, type = "b", col = "red", lty = 2)
+
+install.packages("xcrun")
+library(xcrun)
+```
+
+```{r}
+# Extract loadings
+loadings <- pca_result$rotation
+
+# View loadings for the first few components
+print(loadings[, 1:5])
+
+# Identify significant loadings
+threshold <- 0.5  # This threshold is arbitrary; choose based on context
+significant_loadings <- loadings[apply(abs(loadings), 1, max) > threshold, ]
+
+print(significant_loadings)
+
+```
+

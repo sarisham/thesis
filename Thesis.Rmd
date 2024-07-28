@@ -1,0 +1,798 @@
+---
+title: "Pamplona"
+output: html_document
+date: "2024-04-24"
+---
+
+-   no hay duplicados
+-   tendré que hacer esto: #Creating and deleting NA values for those categories that are 8 (N.S.) or 9 (N.C.) x3393$P4[x3393$P4 == 8] \<- NA x3393$P4[x3393$P4 == 9] \<- NA
+
+x3393$ESTUDIOS[x3393$ESTUDIOS == 9] \<- NA
+
+x3393$RELIGION[x3393$RELIGION == 9] \<- NA
+
+x3393$ESCIDEOL[x3393$ESCIDEOL == 98] \<- NA x3393$ESCIDEOL[x3393$ESCIDEOL == 99] \<- NA
+
+x3393 \<- na.omit(x3393)
+
+-   should i run some t-tests or anova analysis??
+
+```{r}
+library(tidyverse)  # Conjunto de paquetes para manipulación de datos
+library(skimr)      # Paquete para análisis exploratorio
+library(DataExplorer)  # Paquete para análisis exploratorio visual
+
+```
+
+```{r}
+library(tidyverse)
+library(haven)
+library(memisc) #dezcription function
+library(DataExplorer)
+library(caret) #Test and training data sets
+library(FactoMineR)
+library(factoextra)
+library(mice)
+library(missMDA)
+library(cowplot)
+library(cv)
+
+library(tidyverse)
+library(haven)
+library(skimr)
+library(DataExplorer)
+library(labelled)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(forcats)
+
+```
+
+# DATA CLEANING
+
+```{r}
+# Cargar los datos
+pamplona_spss <- as.data.frame(read_sav("23-085 - Ayuntamiento de Navarra (SPSS01).sav"))
+
+table(pamplona_spss$P21)
+```
+
+1.  **Revisión y limpieza de los datos**:
+
+-   primero revisamos los missing values para ver cómo se distribuyen, antes de dropear los no sabe no contesta
+
+```{r}
+
+```
+
+-   segundo tenemos que revisar que categorías son no sabe no contesta para estar segura de q no me dejo ninguna:
+
+98. 
+
+    99. 
+
+-   tercero tengo q decidir si alguna no sabe no contesta me la quedo: no me voy a quedar ninguna. "In this case, I suggest you to be... empirical. I mean try do two models - one with nonresponses taken as missing values (e.g. exclude them from analyze) and second with nonresponses recoded as a middle position on scales. Then just compare results. Based on my experience I assume no big diffrences in what you will get, but empirical test will be the best proof. However, reading you previous answer about proportion of nonresponses (e.g. 10% of your sample) I will rather include them as a middle position, Think about like this: exluding them will be loss of 10% of your study sample" --\> HACER UN ANÁLISIS DESCRIPTIVO DE TODO PARA VER LAS DISTRIBUCIONES. I agree with the above answers. It does not make conceptual or empirical sense to combine "don't know" with a response that does indicate an opinion. To expand on this, I would code "don't know" responses as USER missing data rather than SYSTEM missing data. User missing denotes intentionally treating a value as missing versus an actual absence of data due to a skipped question, for example. This is an important distinction since "don't know" is a legitimate response. These two types of missingness can often be differentiated in analyses.
+
+```{r}
+# Reemplazar los valores 98 y 99 por NA
+pamplona_spss[pamplona_spss == 98 | pamplona_spss == 99] <- NA
+
+```
+
+-   Limpiar atributos SPSS
+
+```{r}
+# Convertir variables etiquetadas a factores con etiquetas descriptivas
+pamplona <- pamplona_spss |> 
+  mutate(across(where(is.labelled), 
+                ~ as_factor(.)))
+
+# Remover atributos innecesarios
+remove_unnecessary_attributes <- function(df) {
+  for (col in names(df)) {
+    attr(df[[col]], "label") <- NULL
+    attr(df[[col]], "format.spss") <- NULL
+    # Mantener las etiquetas (labels)
+  }
+  return(df)
+}
+
+pamplona <- remove_unnecessary_attributes(pamplona)
+
+
+# Convertir factores de vuelta a factores con valores numéricos originales
+convert_to_numeric_factor <- function(column) {
+  if (is.factor(column)) {
+    levels(column) <- as.character(1:length(levels(column)))
+    factor(as.numeric(column))
+  } else {
+    column
+  }
+}
+
+# para trabajar con los valores numricos de las categorias de los factores
+pamplona <- pamplona %>%
+  mutate(across(where(is.factor), 
+                convert_to_numeric_factor))
+
+# si quiero volver a los numericos solo tengo que aplicar la función del prinicpio de este chunk
+
+```
+
+-   recodificar nacimiento: 1. españa, 2. otros
+
+```{r}
+
+# Convertir los nombres de todas las variables a minúsculas
+names(pamplona) <- tolower(names(pamplona))
+
+# Crear y limpiar la nueva variable nP4
+pamplona <- pamplona |> 
+  mutate(np4 = case_when(
+           p4 %in% c(1, 2, 3) ~ 1,
+           !is.na(p4_otros) & p4_otros != "-" ~ 2,
+           TRUE ~ as.numeric(as.character(p4))  # mantener otros valores P4 si hay
+         ),
+    p17_otros = na_if(p17_otros, 
+                      "-")) |> # convertir "-" en NA en p17_otros
+  relocate(np4, 
+           .before = p4)
+
+```
+
+-   eliminar variables no necesarias. renombrar algunas variables
+
+```{r}
+pamplona <- pamplona |> 
+  dplyr::select(-c("estudio", 
+                   "registro",
+                   "p1",
+                   "zona",
+                   "p3_cod",
+                   "p4",
+                   "p4_otros")) |> 
+  dplyr::rename(barrio = p1a,
+                gender = p2,
+                age = p3,
+                nationality = np4,
+                employment = p20,
+                education = p21,
+                income = p22)
+
+```
+
+# EXPLORATORY ANALYSIS
+
+ESTO DE AQUÍ ABAJO NO PORQUE NO ME DA NADA DE INFORMACIÓN RELEVANTE: \# Demographic Analysis demographic_summary \<- pamplona %\>% summarise( mean_age = mean(age, na.rm = TRUE), median_age = median(age, na.rm = TRUE), gender_distribution = table(gender), income_distribution = table(income) ) print(demographic_summary)
+
+```{r}
+
+```
+
+DATA PREPROCESSING
+
+-   análisis exploratorio visual:
+    -   binary vars. hay descompensación... no sé cómo manejarla...buscar bibliografía sobre qué hacer con eso.
+
+```{r}
+# AJUSTAR ESTO CON MI CÓDIGO PERO HACERLO PARA LAS VARIABLES NUMÉRICAS
+nm_x3393 <-x3393 %>%
+  summarise_at(vars(EDAD, ESCIDEOL),
+               list(avg=mean, sd=sd, median=median))
+nm_x3393 %>%
+  kable(booktabs= TRUE, digits= 2, row.names =TRUE,
+        caption= "Numerical measures for Ideology and Age",
+        align = "c") %>%
+  kable_styling(position= "center")
+
+view(nm_x3393)
+
+
+nm1_x3393 <-x3393 %>%
+  summarise_at(vars(ESCIDEOL),
+               list(avg=mean, sd=sd, median=median,max=max))
+
+```
+
+#BOX PLOTS. Conditional distributions
+
+ggplot(x3393,mapping=aes(x=as.character(P4), y=ESCIDEOL))+geom_boxplot(fill="Light blue")+labs(x = "Perception", y = "Ideology") ggplot(x3393,mapping=aes(x=as.character(P4), y=EDAD))+geom_boxplot(fill="Orange")+labs(x = "Perception", y = "Age")
+
+# SOME CONTINGENCY TABLES
+
+# CONTINGENCY TABLES AND CHI SQUARE TEST
+
+#sex ct_1\<-table(x3393$P4, x3393$SEXO)#Joint absolute frequencies ct_1_2\<-prop.table(ct_1)\*100 #Joint relative frequencies
+
+ct_1 ct_1_2
+
+colSums(ct_1_2)#Marginal frecuencies for Sex rowSums(ct_1_2)#Marginal frequencies for P4
+
+ct_1S\<-prop.table(ct_1,margin=2)\*100#Conditional of sex, ct_1S
+
+ct_1P\<-prop.table(ct_1,margin=1)\*100#Conditional of P4, ct_1P
+
+ct_1S %\>% kable(booktabs= TRUE, digits= 2, row.names =TRUE,align = "c") %\>% kable_styling(position= "center") ct_1P %\>% kable(booktabs= TRUE, digits= 2, row.names =TRUE,align = "c") %\>% kable_styling(position= "center")
+
+```{r}
+data_bin <- pamplona[, binary_vars]
+data_ord <- pamplona[, ordinal_vars]
+  
+  
+# Function for plots
+plot_binary <- function(data, var) {
+  ggplot(data_bin, aes_string(x = var)) +
+    geom_bar(fill = "skyblue") +
+    labs(x = var,
+         y = "Frequency") +
+    theme_minimal()
+}
+ 
+# Visualize plots
+plots_bin <- lapply(names(data_bin), function(var) plot_binary(data_bin, var))
+plot_grid(plotlist = plots_bin, nrow = 5, ncol = 3)
+
+plots_ord <- lapply(names(data_ord), function(var) plot_binary(data_ord, var))
+plot_grid(plotlist = plots_ord, nrow = 5, ncol = 3)
+
+
+table(pamplona$p7_1)
+
+```
+
+```{r}
+data_num <- pamplona[, numeric_vars]
+
+# Split variable names into smaller groups before plotting
+num_vars <- names(data_num)
+num_vars_split <- split(num_vars, ceiling(seq_along(num_vars)/9)) 
+
+# List to store the bar plot grids
+histo_grids <- list()
+
+# Loop through each group of variables and create bar plot grids
+for (group in num_vars_split) {
+  group_barplots <- list()
+  
+  # Loop through each variable in the group
+  for (var in group) {
+    group_barplots[[var]] <- ggplot(data_num, aes_string(x = var)) +
+      geom_bar(fill = "skyblue") +
+      theme_minimal()
+  }
+  
+  group_grid <- plot_grid(plotlist = group_barplots, nrow = 3, ncol = 3)
+  
+  histo_grids[[as.character(group[[1]])]] <- group_grid
+}
+
+# Visualize the bar plot grids
+for (grid in histo_grids) {
+  print(grid)
+}
+
+```
+
+-   missing values
+
+```{r}
+# See % of missing values per variable
+sapply(pamplona, 
+       function(x) sum(is.na(x))*100/nrow(pamplona))
+
+# Remove variables with more than 40% NA
+pamplona <- pamplona |> 
+  dplyr::select(-c("p17", 
+                   "p17_otros"))
+
+pamplona <- drop_na(pamplona)
+# data_clean <- na.omit(data)  # Eliminar filas con datos faltantes
+
+```
+
+-   Convertir las variables a factores, ordinales y numéricas según corresponda
+
+```{r}
+
+# Binary variables
+binary_vars <- c("gender", 
+                 "p5_1", "p5_2", "p5_3", "p5_4", "p5_5", "p5_6", "p5_7", "p5_8",
+                 "p6_1", "p6_2", "p6_3",
+                 "p8", 
+                 "p9", 
+                 "p16")
+
+pamplona[binary_vars] <- lapply(pamplona[binary_vars], 
+                                as.factor)
+
+# Variables ordinales (trabajando con números)
+ordinal_vars <- c("p7_1", "p7_2", "p7_3", "p7_4", "p7_5", "p7_6", "p7_7", "p7_8",
+                  "p10_1", "p10_2", "p10_3", "p10_4", "p10_5", "p10_6", "p10_7",
+                  "p12", 
+                  "p15", 
+                  "p19", 
+                  "education", 
+                  "income")
+
+pamplona[ordinal_vars] <- lapply(pamplona[ordinal_vars], 
+                                 function(x) factor(x, 
+                                                    ordered = TRUE))
+
+# Variables categóricas
+categorical_vars <- c("barrio", 
+                      "nationality",
+                      "p13a", "p13b",
+                      "p18", 
+                      "employment")
+
+pamplona[categorical_vars] <- lapply(pamplona[categorical_vars], 
+                                     as.factor)
+
+# Variables numéricas
+numeric_vars <- c("age",
+                  "p11_1", "p11_2",
+                  "p14")
+
+pamplona[numeric_vars] <- lapply(pamplona[numeric_vars], 
+                                 as.numeric)
+
+# Verificación
+str(pamplona)
+
+```
+
+-   NO TENGO QUE IMPUTAR MISSING VALUES.
+
+# ¿QUÉ FALTA?
+
+-   explicar cuáles han sido las variables que he eliminado
+
+-   data preprocessing
+
+If you want control over how many NAs are valid for each row, try this function. For many survey data sets, too many blank question responses can ruin the results. So they are deleted after a certain threshold. This function will allow you to choose how many NAs the row can have before it's deleted:
+
+delete.na \<- function(DF, n=0) { DF[rowSums(is.na(DF)) \<= n,] } By default, it will eliminate all NAs:
+
+delete.na(final) gene hsap mmul mmus rnor cfam 2 ENSG00000199674 0 2 2 2 2 6 ENSG00000221312 0 1 2 3 2 Or specify the maximum number of NAs allowed:
+
+delete.na(final, 2) gene hsap mmul mmus rnor cfam 2 ENSG00000199674 0 2 2 2 2 4 ENSG00000207604 0 NA NA 1 2 6 ENSG00000221312 0 1 2 3 2
+
+# IGNORAR
+
+-   recodificar nacimiento: PRIMERO PONER ESTO Y LUEGO ELIMINAR VARIABLES
+
+esto no lo vamos a incluir al final, no de esta forma. pamplona \<- pamplona \|\> mutate(nP4 = case_when( P4 %in% c("Pamplona", "Resto de Navarra", "Resto de España") \~ "España", !is.na(P4_OTROS) & P4_OTROS != "-" \~ P4_OTROS, TRUE \~ as.character(P4) \# Para mantener otros valores de P4 si los hay ), nP4 = str_to_lower(nP4), \# escribir en minúscula nP4 = ifelse(str_detect(nP4, "\\(.*\\)"), str_extract(nP4, "(?\<=\\().*?(?=\\))"), nP4))
+
+```{r}
+pamplona <- pamplona |> 
+  mutate(nP4 = case_when(
+           P4 %in% c("Pamplona", "Resto de Navarra", "Resto de España") ~ "España",
+           !is.na(P4_OTROS) & P4_OTROS != "-" ~ P4_OTROS,
+           TRUE ~ as.character(P4)  # Para mantener otros valores de P4 si los hay
+         ),
+         nP4 = str_to_lower(nP4),  # escribir en minúscula
+         nP4 = ifelse(str_detect(nP4, 
+                                 "\\(.*\\)"), 
+                      str_extract(nP4, 
+                                  "(?<=\\().*?(?=\\))"), 
+                      nP4))
+
+table(pamplona_spss$P4_)
+```
+
+```{r}
+
+```
+
+2.  **Análisis exploratorio básico**:
+
+```{r}
+# Resumen básico de las variables
+summary(pamplona)
+
+# Análisis exploratorio con skimr
+skim(pamplona)
+
+# Análisis exploratorio con DataExplorer
+create_report(pamplona)
+
+```
+
+3.  **Visualización de datos**:
+
+-   Categorical variables
+
+```{r}
+data_bin <- pamplona[, c(binary_vars, 
+                         ordinal_vars,
+                         categorical_vars)]
+
+# Split variable names into smaller groups before plotting
+cat_vars <- names(data_bin)
+cat_vars_split <- split(cat_vars, 
+                        ceiling(seq_along(cat_vars)/9)) 
+
+# List to store the bar plot grids
+bar_plot <- list()
+
+# Loop through each group of variables and create bar plot grids
+for (group in cat_vars_split) {
+  group_barplots <- list()
+  
+  # Loop through each variable in the group
+  for (var in group) {
+    group_barplots[[var]] <- ggplot(data_bin, 
+                                    aes_string(x = var)) +
+      geom_bar(fill = "skyblue") +
+      theme_minimal()
+  }
+  
+  group_grid <- plot_grid(plotlist = group_barplots, 
+                          nrow = 3, 
+                          ncol = 3)
+  
+  bar_plot[[as.character(group[[1]])]] <- group_grid
+}
+
+# Visualize the bar plot grids
+for (grid in bar_plot) {
+  print(grid)
+}
+
+```
+
+-   Numeric variables:
+
+```{r}
+# Split variable names into smaller groups before plotting
+data_num <- pamplona[, numeric_vars]
+
+# Function for plots
+plot_num <- function(data, var) {
+  ggplot(data_num, 
+         aes_string(x = var)) +
+    geom_histogram(fill = "skyblue") +
+    labs(x = var,
+         y = "Frequency") +
+    theme_minimal()
+}
+
+# Visualize plots
+plots_num <- lapply(names(data_num), 
+                    function(var) plot_num(data_num, 
+                                           var))
+plot_grid(plotlist = plots_num, 
+          nrow = 3, 
+          ncol = 3)
+
+```
+
+CROSS VALIDATION FOR THE MISSING
+
+```{r}
+# Cross-validation function for final imputation with CART
+cv_mice <- function(data, method, n_folds = 5, seed = 123) {
+  set.seed(seed)
+  folds <- createFolds(seq_len(nrow(data)), k = n_folds)
+  
+  results <- lapply(folds, function(fold) {
+    train_data <- data[-fold, ]
+    test_data <- data[fold, ]
+    
+    imputed_train <- mice(train_data, m = 1, method = method, seed = seed)
+    complete_train <- complete(imputed_train, 1)
+    
+    list(train = complete_train, test = test_data)
+  })
+  
+  results
+}
+
+# Apply cross-validation for final imputation with `cart` method
+cv_results_cart <- cv_mice(pamplona, 
+                           method = "cart")
+
+# Aggregating the imputed data
+pamplonaf_combined <- do.call(rbind, 
+                              lapply(cv_results_cart, 
+                                     function(res) res$train))
+```
+
+2.  ESTO NO FUNCIONA BIEN DEL TODO. sigue habiendo 4095 obs 2. Imputation with Cross-Validation and Combining Results If you want to ensure maximum robustness and want to use the cross-validation mechanism to address variability and potential biases further:
+
+-   Cross-Validation: Perform cross-validation as done previously, which splits the data and imputes in each fold.
+-   Combining Imputed Data: After imputation, you combine the results to create a final dataset. This approach helps in assessing the variability across folds.
+
+```{r}
+# Extracting all categorical variables from the dataset "pamplona"
+categorical_vars <- names(pamplona)[sapply(pamplona, 
+                                           is.factor)]
+
+# Extracting all numeric variables from the dataset "pamplona"
+numeric_vars <- names(pamplona)[sapply(pamplona, 
+                                       is.numeric)]
+
+# Print the lists
+print(numeric_vars)
+print(categorical_vars)
+
+```
+
+```{r}
+# Example usage for normalization or plotting
+# Categorical variables
+normalized_categorical_proportions <- normalize_categorical(pamplonaf_combined, categorical_vars)
+
+# Numeric variables
+numeric_plots <- plot_numeric_distribution_normalized(pamplona, pamplonaf_combined, numeric_vars)
+lapply(numeric_plots, print)
+
+```
+
+combined_imputed_data
+
+```{r}
+# Normalize the frequency counts to proportions for categorical variables
+normalize_categorical <- function(data, categorical_vars) {
+  proportions_list <- lapply(categorical_vars, function(var) {
+    freq_table <- prop.table(table(data[[var]], useNA = "ifany"))
+    data.frame(Category = names(freq_table), Proportion = as.numeric(freq_table))
+  })
+  names(proportions_list) <- categorical_vars
+  return(proportions_list)
+}
+
+# Get normalized proportions for all categorical variables
+normalized_categorical_proportions <- normalize_categorical(combined_imputed_data, categorical_vars)
+
+# Example usage: print the normalized proportions for a categorical variable
+print(normalized_categorical_proportions$p18)
+
+```
+
+```{r}
+# Min-max normalization (range 0-1)
+min_max_normalize_numeric <- function(data, numeric_vars) {
+  data[numeric_vars] <- lapply(data[numeric_vars], function(x) (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))
+  return(data)
+}
+
+# Apply min-max normalization to the numeric variables in the combined dataset
+combined_imputed_data_normalized <- min_max_normalize_numeric(combined_imputed_data, numeric_vars)
+
+# Example usage: print the first few rows of the normalized dataset
+head(combined_imputed_data_normalized)
+
+```
+
+otra opcion q tampoco funciona bien:
+
+```{r}
+# Ensure consistent row counts in imputed datasets
+imputed_datasets <- lapply(imputed_datasets, function(df) {
+  if (nrow(df) != nrow(pamplona)) {
+    stop("Imputed dataset has a different number of rows than the original data.")
+  }
+  return(df)
+})
+
+```
+
+```{r}
+# Function to sample imputed values for numeric variables
+sample_imputed_values_numeric <- function(imputed_datasets, numeric_vars) {
+  sampled_data <- data.frame(matrix(NA, nrow = nrow(imputed_datasets[[1]]), ncol = length(numeric_vars)))
+  colnames(sampled_data) <- numeric_vars
+  
+  for (var in numeric_vars) {
+    # Extract all imputed values across all datasets for this variable
+    all_values <- do.call(cbind, lapply(imputed_datasets, function(dataset) dataset[[var]]))
+    # Sample one value per row
+    sampled_values <- apply(all_values, 1, function(x) sample(x, 1, replace = TRUE))
+    sampled_data[[var]] <- sampled_values
+  }
+  
+  return(sampled_data)
+}
+
+```
+
+```{r}
+# Function to sample imputed values for categorical variables
+sample_imputed_values_categorical <- function(imputed_datasets, categorical_vars) {
+  sampled_data <- data.frame(matrix(NA, nrow = nrow(imputed_datasets[[1]]), ncol = length(categorical_vars)))
+  colnames(sampled_data) <- categorical_vars
+  
+  for (var in categorical_vars) {
+    # Extract all imputed values across all datasets for this variable
+    all_values <- do.call(cbind, lapply(imputed_datasets, function(dataset) as.character(dataset[[var]])))
+    # Sample one value per row
+    sampled_values <- apply(all_values, 1, function(x) sample(x, 1, replace = TRUE))
+    sampled_data[[var]] <- sampled_values
+  }
+  
+  return(sampled_data)
+}
+
+```
+
+```{r}
+# Apply sampling to numeric and categorical variables
+sampled_numeric_data <- sample_imputed_values_numeric(imputed_datasets, numeric_vars)
+sampled_categorical_data <- sample_imputed_values_categorical(imputed_datasets, categorical_vars)
+```
+
+```{r}
+# Combine sampled numeric and categorical data
+sampled_combined_data <- cbind(sampled_numeric_data, sampled_categorical_data)
+
+# Add non-imputed variables from the original data
+non_imputed_vars <- setdiff(names(pamplona), c(numeric_vars, categorical_vars))
+sampled_combined_data <- cbind(sampled_combined_data, pamplona[, non_imputed_vars])
+
+# Replace missing values in the original dataset with sampled imputed values
+final_imputed_data <- pamplona
+final_imputed_data[!complete_cases, ] <- sampled_combined_data[!complete_cases, ]
+
+# Ensure the final dataset has the original number of observations
+final_imputed_data <- final_imputed_data[1:nrow(pamplona), ]
+
+```
+
+# TENER EN CUENTA TODO ESTO
+
+### Error Handling in R
+
+Error handling is crucial for making your code robust and preventing it from crashing unexpectedly. Here are some techniques you can use in R:
+
+1.  **Try-Catch Mechanism**: Use `tryCatch()` to handle potential errors during execution. This function allows you to define what should happen if an error occurs, making your code more resilient.
+
+    ``` r
+    # Example of tryCatch
+    safe_read_sav <- function(file) {
+      tryCatch(
+        {
+          data <- read_sav(file)
+          return(data)
+        },
+        error = function(e) {
+          message("Error reading the file: ", e$message)
+          return(NULL)  # Return NULL or a default value
+        }
+      )
+    }
+
+    # Usage
+    pamplona_spss <- safe_read_sav("23-085 - Ayuntamiento de Navarra (SPSS01).sav")
+    ```
+
+2.  **Validating Inputs**: Before performing operations, check that inputs meet the necessary criteria (e.g., non-null, correct type). This prevents issues from propagating through your code.
+
+    ``` r
+    # Check for missing columns
+    if (!"age" %in% colnames(pamplona_spss)) {
+      stop("The 'age' column is missing from the dataset.")
+    }
+
+    # Ensure numeric data
+    if (!is.numeric(pamplona_spss$age)) {
+      stop("'age' column must be numeric.")
+    }
+    ```
+
+3.  **Custom Error Messages**: Use `stop()` to terminate the function and provide informative error messages.
+
+    ``` r
+    # Checking for required packages
+    if (!requireNamespace("haven", quietly = TRUE)) {
+      stop("The 'haven' package is required but not installed.")
+    }
+    ```
+
+4.  **Warning and Message Handling**: Use `warning()` and `message()` to provide non-critical alerts that do not stop the execution.
+
+    ``` r
+    if (any(is.na(pamplona_spss$age))) {
+      warning("There are missing values in the 'age' column.")
+    }
+    ```
+
+### Alternative Imputation Methods
+
+While `cart` (Classification and Regression Trees) is a versatile method for imputing both categorical and numeric data, there are other methods that can handle mixed data types:
+
+1.  **k-Nearest Neighbors (k-NN)**: The k-NN imputation method can handle both categorical and numeric data. It imputes missing values based on the most similar observations (neighbors) in the dataset.
+
+    ``` r
+    library(VIM)  # Package for k-NN imputation
+
+    pamplona_imputed <- kNN(pamplona_spss)
+    ```
+
+2.  **Multiple Imputation by Chained Equations (MICE)**: MICE is a popular method that can handle various data types by specifying different imputation models for each variable type. For mixed data, it can use appropriate methods for each type.
+
+    ``` r
+    library(mice)
+
+    pamplona_imputed_mice <- mice(pamplona_spss, method = "pmm")  # Predictive mean matching for numeric data
+    pamplona_imputed <- complete(pamplona_imputed_mice)
+    ```
+
+3.  **Random Forest**: Random forest imputation is another robust method that can be used for both categorical and numeric variables. It builds a forest of trees and averages the results for imputation.
+
+    ``` r
+    library(missForest)
+
+    pamplona_imputed_rf <- missForest(pamplona_spss)$ximp
+    ```
+
+4.  **SoftImpute**: This method is based on matrix completion techniques and can be applied to datasets with missing values, handling both numeric and categorical data.
+
+    ``` r
+    library(softImpute)
+
+    # SoftImpute for a dataset with numeric variables
+    pamplona_imputed_si <- softImpute(pamplona_spss)
+    ```
+
+### Choosing the Right Method
+
+1.  **Assess the Data**:
+    -   **Data Type**: Ensure the method supports your data types.
+    -   **Amount of Missing Data**: Some methods handle high levels of missing data better than others.
+2.  **Evaluate Method Performance**:
+    -   **Cross-validation**: Similar to what you've done with `cart`, use cross-validation to evaluate the consistency and accuracy of different imputation methods.
+    -   **Compare Distributions**: After imputation, compare the distributions of the imputed and original data to ensure that the imputation process has not distorted the data.
+3.  **Consider Computational Complexity**:
+    -   Some methods may be more computationally intensive than others, especially on large datasets.
+
+Exploring and comparing these methods can give you greater confidence in your choice of imputation technique.
+
+# incluir data set delitos
+
+Using an additional dataset for data augmentation can be a valuable approach, especially when dealing with data imbalance issues. Here’s how you can approach it conceptually, without diving into specific code:
+
+### **1. Assess Compatibility and Relevance**
+
+Before augmenting your original dataset with the new one, ensure that the two datasets are compatible and relevant:
+
+-   **Similarity in Variables**: Check if the crime variables in the additional dataset match those in your original dataset. The variables should represent similar concepts (e.g., types of crimes, incidents) for the augmentation to be meaningful.
+-   **Temporal Alignment**: Since the additional dataset covers the same year, it's temporally aligned, which is important for consistency.
+-   **Spatial Alignment**: While your original dataset may focus on specific areas or respondents, the additional dataset covers the entire municipality. Consider if this broader scope can be reconciled with the focus of your original data.
+
+### **2. Data Integration Strategy**
+
+There are several ways to integrate the additional dataset into your analysis:
+
+#### **a. Direct Integration**
+
+If the additional dataset has similar structure and variables, you might directly combine it with your original dataset:
+
+-   **Union of Datasets**: Combine the two datasets, ensuring that variables are harmonized. This approach increases the sample size, particularly for the minority classes (crime incidents).
+
+#### **b. Weighting or Scaling**
+
+To account for differences in sample representation or geographic coverage:
+
+-   **Weighting**: Apply weights to the entries from the additional dataset to adjust for the broader coverage. This helps balance the influence of the larger dataset against the original sample's more focused scope.
+-   **Scaling**: Scale the crime data from the additional dataset to match the relative proportions observed in the original dataset's sample area, if such details are known.
+
+#### **c. Feature Engineering**
+
+Use the additional dataset to engineer new features:
+
+-   **Aggregated Indicators**: Create aggregated indicators (e.g., crime rates per 1,000 people) from the additional dataset and use these as new features in your analysis.
+-   **Spatial Analysis**: If the additional dataset includes geographical data, perform spatial analysis to determine the distribution of crimes across different areas. This can add context to your analysis, even if not directly linked to individual responses.
+
+### **3. Validation and Cross-Referencing**
+
+-   **Cross-Validation**: Validate the augmented data by cross-referencing with known crime data or statistics. Ensure that the trends and patterns make sense and align with established knowledge.
+-   **Impact Assessment**: Assess the impact of adding the new dataset on your models and analysis. Check for consistency in the crime index calculations and ensure that the augmented data improves the robustness and validity of your results.
+
+### **4. Documentation and Transparency**
+
+-   **Document the Process**: Clearly document how the additional dataset was integrated, any assumptions made, and how potential biases were addressed.
+-   **Transparency**: Be transparent about the differences between the datasets and any limitations this integration may introduce.
+
+Using an additional dataset for data augmentation can enhance the richness and representativeness of your analysis, especially in addressing data imbalance. However, it requires careful consideration of the compatibility, integration strategy, and potential biases introduced by the new data.
