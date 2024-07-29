@@ -9,84 +9,6 @@ editor_options:
 
 Dudas:
 
-The data imbalance you've observed, where the "yes" category
-(representing incidents or perceptions of crime) is underrepresented,
-can pose challenges in your analysis, particularly in the context of
-creating an objective crime index. This imbalance can lead to biased
-models and incorrect interpretations if not addressed properly. Here are
-the key issues and potential solutions:
-
-Issues with Data Imbalance 1. Biased Models: Machine learning models can
-become biased towards the majority class ("no" responses) because they
-are overrepresented. This can result in poor predictive performance for
-the minority class ("yes" responses), which is often the more critical
-class in this context.
-
-2.  Misleading Metrics: Metrics such as accuracy can be misleading in
-    imbalanced datasets. For example, a model that predicts the majority
-    class for every observation would still achieve a high accuracy,
-    despite failing to correctly predict the minority class.
-
-3.  Limited Information on Minority Class: The underrepresentation of
-    "yes" responses can lead to insufficient data to learn patterns or
-    correlations for this class, which may be crucial for your index.
-
-Applying resampling techniques to all imbalanced variables can be
-useful, but it depends on the specific goals of your analysis and the
-nature of each variable. Here are some considerations to help you
-decide:
-
-1.  Nature of the Variables and Their Role in the Index Critical
-    Variables: If certain variables are critical for the calculation of
-    your objective crime index (e.g., direct indicators of crime like
-    incidents of theft, violence), ensuring these are well-represented
-    in the dataset is essential. Resampling these variables can help
-    improve the model's understanding and predictions regarding the
-    occurrence of these incidents.
-
-Auxiliary Variables: For variables that provide supplementary
-information but are not central to the index, resampling may not be as
-crucial. The impact of these variables on the overall index may be
-limited, and excessive resampling could introduce noise or overfitting.
-
-2.  Impact of Resampling on Analysis Dimensionality and Model
-    Complexity: Over-resampling all variables can increase the dataset
-    size significantly and may lead to overfitting, especially if the
-    dataset becomes dominated by synthetic data. It can also make the
-    model more complex and harder to interpret.
-
-Specific Analysis Requirements: If your analysis includes feature
-importance evaluation or building a predictive model, ensuring that key
-predictors are balanced might be more critical than balancing all
-variables. However, if the analysis focuses on descriptive statistics or
-correlations, the need for resampling may be less pressing.
-
-3.  Evaluating the Imbalance's Impact Data Distribution Check: Evaluate
-    the distribution of the minority class in each variable. If some
-    variables have extremely low minority representation (e.g., less
-    than 1%), they might need more aggressive resampling or specialized
-    techniques like anomaly detection.
-
-Model Performance Metrics: Experiment with and without resampling for
-different variables and compare the performance metrics (e.g.,
-precision, recall, F1-score) for each approach. This can provide insight
-into whether resampling is necessary for all variables or just a subset.
-
-4.  Practical Approach Prioritize Key Variables: Start with resampling
-    techniques for the most critical variables directly related to crime
-    incidents (e.g., P5 and P6 variables). Evaluate the model's
-    performance and the resulting index's reliability.
-
-Selective Resampling: If the initial results suggest that other
-imbalanced variables are influencing the index significantly, consider
-resampling those as well. This selective approach can help balance the
-need for comprehensive data representation with the risks of overfitting
-and increased complexity.
-
-Iterative Process: Treat this as an iterative process. Begin with a base
-model and progressively include resampling for additional variables as
-needed, based on model evaluation and index stability.
-
 1.  **IMPUTACIÓN NA**. No sé si he hecho la imputación bien. La base de
     datos tiene variables binarias, ordinales, categóricas de varias
     categorías y numéricas (discretas). He intentado aplicar al menos
@@ -111,21 +33,12 @@ needed, based on model evaluation and index stability.
     normalizando los datos para corregir las diferencias en el tamaño de
     la muestra). En principio creo que debería ser suficiente así...
 
-The visual difference in bar heights is due to the different number of
-observations rather than a change in the relative distribution of
-categories. The proportions are consistent between the original and
-imputed datasets, as indicated by the quantitative data you provided.
-Normalizing the Data for Comparison To make a proper visual comparison,
-you should normalize the frequency counts to proportions (relative
-frequencies) instead of raw counts. This adjustment will make it easier
-to compare the distributions, regardless of the total number of
-observations in each dataset. - Normalized plot comparison
-
 -   Uso de unsupervised machine learning (si) y supervised machine
     learning (no).
 
+```{=html}
 <!-- -->
-
+```
 -   **ÍNDICE DE CRIMINALIDAD OBJETIVA**:
 
     1.  Data imbalance.
@@ -138,7 +51,7 @@ observations in each dataset. - Normalized plot comparison
         comentamos para hacerlo más accurate y poder hacer una
         comparativa por zonas de la ciudad, pero no tengo los datos
         oficiales.
-        ![](images/Captura%20de%20pantalla%202024-07-29%20a%20las%200.56.51.png){width="539"}
+        ![](images/Captura de pantalla 2024-07-29 a las 0.56.51.png){width="539"}
 
         Sobre la info que recoge la encuesta, aunque sí pregunta por
         situaciones que se hayan vivido, no pregunta por el barrio en el
@@ -158,10 +71,6 @@ observations in each dataset. - Normalized plot comparison
 
 -   **ÍNDICE DE PERCEPCIÓN DE LA INSEGURIDAD**.
 
-    -   PCA
-
--   Tipos de zona
-
 ```{r}
 library(tidyverse)  # Conjunto de paquetes para manipulación de datos
 library(skimr)      # Paquete para análisis exploratorio
@@ -175,7 +84,7 @@ library(forcats)
 library(haven)
 library(memisc) #dezcription function
 library(DataExplorer)
-library(caret) 
+library(caret) #Test and training data sets
 library(FactoMineR)
 library(factoextra)
 library(mice)
@@ -411,7 +320,38 @@ pamplona <- pamplona |>
 
 ```
 
--   Cart without cross validation (just one variable)
+"Given the different data types (binary, ordinal, nominal, numeric), it
+is generally advisable to impute each type separately to ensure that the
+methods are appropriate for the data type. However, if you face issues
+with mixed data types or find that a unified approach (like using cart)
+works without errors, that can be a pragmatic solution. Here's the
+decision-making process:
+
+Consistency Across Types: Using different methods (e.g., logreg for
+binary, polr for ordinal, pmm for numeric) is ideal for accuracy.
+However, if this leads to complications or errors, and the cart method
+successfully imputes all types, then using cart could be a practical
+alternative. Unified Approach with cart: The cart method (Classification
+and Regression Trees) is versatile and can handle different types of
+data, which makes it a safe choice when mixed data types are present."
+
+"Imputation Steps with cart Since using cart works without issues:
+
+Advantages: It avoids the complexity of matching methods to data types
+and potential errors from inappropriate method applications.
+Considerations: While cart can impute different types of variables, be
+mindful of the interpretation, as it may treat all data as numeric-like
+under the hood, which could influence how categorical relationships are
+modeled."
+
+"Handling NAs and Outliers: Your approach to NA values and outliers
+(such as converting specific values to NA) is crucial. Make sure to
+document these transformations thoroughly."
+
+"Bivariate Analysis: Your use of chi-square tests, t-tests, and ANOVA is
+appropriate for exploring relationships between variables. Ensure that
+assumptions for these tests (like normality for t-tests) are met or note
+any deviations."
 
 ```{r}
 vars_cat <- pamplona |> 
@@ -428,7 +368,7 @@ mice_imputed <- data.frame(
 # Imputation methods: plotting resuls 
 variables <- c("original", 
                "imputed_cart")
-titles <- c("Original distribution", 
+titles <- c("Distribution", 
             "Cart-imputed distribution")
 colors_fill <- c("skyblue", 
                  "#15ad4f")
@@ -453,31 +393,61 @@ for (i in 1:length(variables)) {
 plot_grid(plotlist = plots, 
           nrow = 2, 
           ncol = 2)
-
 ```
 
 ### Cross validation
 
+Cross-validation is applied to validate this imputation model (why).
+This involves partitioning the data into training and test sets multiple
+times to assess the stability and accuracy of the imputation. Then, we
+will check post-imputation data distributions:
+
+ah alright so from the crossvalidaation i dont need to get a new dataset
+with the imputed data, but rather compare the variability across the
+resulting cross by checking different parameters and see how consistent
+they are, right? after that, once we have determined
+consistency/robustness we can actually use (or not) cart to impute de
+data. right? es, exactly. The primary purpose of cross-validation in the
+context of imputation is to assess the consistency and robustness of the
+imputation method. Here's a step-by-step outline:
+
+Cross-Validation Process:
+
+-   Split the Data: The dataset is divided into multiple folds. For each
+    fold, a subset of the data is used as the training set (to perform
+    imputation), and the remaining subset is used as the test set.
+-   Impute Missing Data: For each fold, the missing data in the training
+    set is imputed using the selected method (e.g., cart).
+-   Assess Imputation Consistency: After imputing, we compare the
+    imputed values across different folds. Consistency across folds
+    suggests that the method is robust and reliable. Evaluating
+    Consistency:
+
+"Parameter Checking: Look at various parameters or metrics that are
+critical to your analysis. For example, you can check the mean, standard
+deviation, or distribution of imputed values across different folds.
+Bias and Variance: Assess whether the imputed values are systematically
+biased (e.g., consistently higher or lower than expected) or have high
+variance across folds".
+
 ```{r}
+library(mice)
+library(caret)  # For cross-validation
+
+# Function for cross-validation using MICE
 # Function for cross-validation using MICE
 cv_mice <- function(data, method, n_folds = 5, seed = 123) {
   set.seed(seed)
-  folds <- createFolds(seq_len(nrow(data)), 
-                       k = n_folds)
+  folds <- createFolds(seq_len(nrow(data)), k = n_folds)
   
   results <- lapply(folds, function(fold) {
     train_data <- data[-fold, ]
     test_data <- data[fold, ]
     
-    imputed_train <- mice(train_data, 
-                          m = 2, 
-                          method = method, 
-                          seed = seed)
-    complete_train <- complete(imputed_train, 
-                               1)  # Use the first imputed dataset
+    imputed_train <- mice(train_data, m = 2, method = method, seed = seed)
+    complete_train <- complete(imputed_train, 1)  # Use the first imputed dataset
     
-    list(train = complete_train, 
-         test = test_data)
+    list(train = complete_train, test = test_data)
   })
   
   results
@@ -491,7 +461,8 @@ cv_results_cart <- cv_mice(pamplona,
 
 In order to compare the resulting distributions...
 
-1.  Extract imputed values across folds and compare them:
+1.  Extract Imputed Values Across Folds First, extract the imputed
+    datasets from each fold and compare them:
 
 ```{r}
 # Extract imputed values from each fold
@@ -499,7 +470,7 @@ imputed_datasets <- lapply(cv_results_cart,
                            function(res) res$train)
 
 # Combine imputed data into one data frame for analysis
-  # Note: Ensure the imputed datasets have the same structure
+# Note: Ensure the imputed datasets have the same structure
 combined_imputed_data <- do.call(rbind, 
                                  imputed_datasets)
 
@@ -507,12 +478,12 @@ combined_imputed_data <- do.call(rbind,
 
 2.  Calculate Variability Across Imputed Values
 
-2.1. For numeric variables: calculate statistics like the mean, standard
-deviation, and other relevant metrics for each variable to see how
-consistent the imputed values are across different folds.
+2.1. For numeric variables: You can calculate statistics like the mean,
+standard deviation, and other relevant metrics for each variable to see
+how consistent the imputed values are across different folds.
 
 ```{r}
-# Analyzing variability for a specific variable
+# Example: Analyzing variability for a specific variable
 analyze_variability <- function(imputed_data, variable_name) {
   # Extract the specific variable across all imputed datasets
   imputed_values <- combined_imputed_data[[variable_name]]
@@ -534,9 +505,13 @@ print(variability_age)
 
 ```
 
-2.2. Analyzing variability for categorical variables: frequency tables
-and visualizations like bar plots to analyze the consistency and
-variability of the imputed values.
+2.2. Analyzing variability for categorical variableS: For categorical
+variables, we typically use frequency tables and visualizations like bar
+plots to analyze the consistency and variability of the imputed values.
+
+Calculate Frequency Distributions To assess the variability, you can
+calculate the frequency distribution of each category in the imputed
+data and compare it with the original data
 
 ```{r}
 # Function to calculate and compare frequency distributions
@@ -564,9 +539,7 @@ print(freq_distributions_p18)
 ```
 
 3.  Visualize Distribution of Imputed Values to see if there are any
-    significant differences across folds.
-
-3.1. Numeric variables
+    significant differences across folds. 3.1. Numeric variables
 
 ```{r}
 # Visualize normalized distribution of imputed values for a specific variable
@@ -620,7 +593,39 @@ compare_original_imputed_normalized(pamplona,
 
 ```
 
-3.2. Categorical variable
+3.2. Visualizing Categorical Data Distribution Plotting Bar Charts for
+Categorical Data For categorical data, use bar charts to compare the
+original and imputed distributions.
+
+could this be due to the fact that the combined imputed data, after the
+cross validation process, has 4095 observations, whereas the original
+dataset has only 828? because although the frequencies are diff., the
+distributions seems quite similar
+
+You're correct in observing that the frequencies in the bar plot appear
+different, which can indeed be attributed to the difference in the
+number of observations between the original and imputed datasets. In
+cross-validation, when you combine imputed data from all folds, you
+effectively increase the number of observations because you're
+aggregating data across multiple folds.
+
+Understanding the Impact of Cross-Validation on Data Size Original vs.
+Combined Data Size:
+
+The original dataset has 828 observations. The combined imputed dataset
+from cross-validation has 4095 observations, likely due to combining
+imputed datasets from each fold, resulting in a higher total count.
+Proportional Comparison:
+
+The visual difference in bar heights is due to the different number of
+observations rather than a change in the relative distribution of
+categories. The proportions are consistent between the original and
+imputed datasets, as indicated by the quantitative data you provided.
+Normalizing the Data for Comparison To make a proper visual comparison,
+you should normalize the frequency counts to proportions (relative
+frequencies) instead of raw counts. This adjustment will make it easier
+to compare the distributions, regardless of the total number of
+observations in each dataset. - Normalized plot comparison
 
 ```{r}
 # Normalize the frequency counts to proportions
@@ -667,7 +672,27 @@ plot_categorical_distribution_normalized(pamplona,
 
 ```
 
-4.  Imputation without Cross-Validation
+The normalization process corrects for differences in sample size,
+allowing you to focus on the shape and distribution of the data rather
+than absolute frequencies. This will help you confirm whether the
+imputation has maintained the relative proportions across categories or
+introduced any significant distortions.
+
+Since the imputed values are consistent and align well with the
+non-missing data, the method is considered robust and it is
+validated.Therefore, based on the consistency and robustness assessment,
+we decide to proceed with cart for the final imputation of the entire
+dataset.
+
+*Carrying out the imputation*: 1. Imputation without Cross-Validation
+Imputing the entire dataset using cart without cross-validation is
+straightforward and often sufficient if:
+
+-   Validation is Complete: You've already validated the cart method
+    through previous cross-validation steps and found it robust and
+    consistent.
+-   Simplicity and Efficiency: This approach is simpler and faster, as
+    it avoids the complexity of combining results from multiple folds.
 
 ```{r}
 # Imputing based on cart
@@ -682,7 +707,7 @@ quería intentar la imputación con cross validation pero no sabía cómo
 manejar las 4095 observaciones resultantes (los dos códigos que intenté
 están en Thesis.rmd)
 
-# Exploratory analysis
+# EXPLORATORY ANALYSIS
 
 ## Descriptive analysis / univariate
 
@@ -733,12 +758,18 @@ univariate_analysis <- function(data) {
   }
 }
 
-# Call the function
+# Call the function with your data
 univariate_analysis(pamplonaf)
 
 ```
 
--   Variables related to the *criminality index*.
+-   Now we focus in the variables we identified might be related to the
+    *criminality index*. MIRAR SI INCLUIR LOS DATOS DE LA POLICÍA En el
+    cuestionario, de esto se habla en: P5. Incidentes de robo y atraco,
+    P6. Experiencias de violencia y acoso, P12. Percepción de
+    degradación y delincuencia en el barrio, P16. Conflictos de
+    convivencia en el barrio donde vive, P17. Motivos del conflicto en
+    el barrio.
 
 ```{r}
 crime_vars <- pamplonaf[, c("p5_1", "p5_2", "p5_3", 
@@ -751,7 +782,14 @@ univariate_analysis(crime_vars)
 
 ```
 
--   *Perception index*
+-   Now the *perception index* En el cuestionario, de esto se habla en:
+    P7: Percepción de seguridad en diferentes espacios, P9: Cambio de
+    domicilio por inseguridad en el barrio, algunas de P10: Opiniones
+    sobre la seguridad al caminar solo/a, evitar zonas, cámaras de
+    seguridad, P11: Nivel de seguridad en barrio y ciudad, P12.
+    Percepción de degradación y delincuencia en el barrio (tendría que
+    decidir en qué índice incluyo esta variable). Quizás también P14:
+    Valoración de los servicios de la Policía Municipal.
 
 ```{r}
 perception_vars <- pamplonaf[, c("p7_1", "p7_2", "p7_3", 
@@ -760,7 +798,7 @@ perception_vars <- pamplonaf[, c("p7_1", "p7_2", "p7_3",
                             "p9", 
                             "p10_1", "p10_2", 
                             "p10_4", "p10_5", "p10_6", 
-                            "p11_1", "p11_2", 
+                            "p11_1", "p11_2", #la del barrio no estoy segura
                             "p12", 
                             "p14")]
 
@@ -780,11 +818,95 @@ univariate_analysis(protections_vars)
 
 ```
 
-### Data imbalance
+### Data imbalance in
+
+The data imbalance you've observed, where the "yes" category
+(representing incidents or perceptions of crime) is underrepresented,
+can pose challenges in your analysis, particularly in the context of
+creating an objective crime index. This imbalance can lead to biased
+models and incorrect interpretations if not addressed properly. Here are
+the key issues and potential solutions:
+
+Issues with Data Imbalance 1. Biased Models: Machine learning models can
+become biased towards the majority class ("no" responses) because they
+are overrepresented. This can result in poor predictive performance for
+the minority class ("yes" responses), which is often the more critical
+class in this context.
+
+2.  Misleading Metrics: Metrics such as accuracy can be misleading in
+    imbalanced datasets. For example, a model that predicts the majority
+    class for every observation would still achieve a high accuracy,
+    despite failing to correctly predict the minority class.
+
+3.  Limited Information on Minority Class: The underrepresentation of
+    "yes" responses can lead to insufficient data to learn patterns or
+    correlations for this class, which may be crucial for your index.
+
+Applying resampling techniques to all imbalanced variables can be
+useful, but it depends on the specific goals of your analysis and the
+nature of each variable. Here are some considerations to help you
+decide:
+
+1.  Nature of the Variables and Their Role in the Index Critical
+    Variables: If certain variables are critical for the calculation of
+    your objective crime index (e.g., direct indicators of crime like
+    incidents of theft, violence), ensuring these are well-represented
+    in the dataset is essential. Resampling these variables can help
+    improve the model's understanding and predictions regarding the
+    occurrence of these incidents.
+
+Auxiliary Variables: For variables that provide supplementary
+information but are not central to the index, resampling may not be as
+crucial. The impact of these variables on the overall index may be
+limited, and excessive resampling could introduce noise or overfitting.
+
+2.  Impact of Resampling on Analysis Dimensionality and Model
+    Complexity: Over-resampling all variables can increase the dataset
+    size significantly and may lead to overfitting, especially if the
+    dataset becomes dominated by synthetic data. It can also make the
+    model more complex and harder to interpret.
+
+Specific Analysis Requirements: If your analysis includes feature
+importance evaluation or building a predictive model, ensuring that key
+predictors are balanced might be more critical than balancing all
+variables. However, if the analysis focuses on descriptive statistics or
+correlations, the need for resampling may be less pressing.
+
+3.  Evaluating the Imbalance's Impact Data Distribution Check: Evaluate
+    the distribution of the minority class in each variable. If some
+    variables have extremely low minority representation (e.g., less
+    than 1%), they might need more aggressive resampling or specialized
+    techniques like anomaly detection.
+
+Model Performance Metrics: Experiment with and without resampling for
+different variables and compare the performance metrics (e.g.,
+precision, recall, F1-score) for each approach. This can provide insight
+into whether resampling is necessary for all variables or just a subset.
+
+4.  Practical Approach Prioritize Key Variables: Start with resampling
+    techniques for the most critical variables directly related to crime
+    incidents (e.g., P5 and P6 variables). Evaluate the model's
+    performance and the resulting index's reliability.
+
+Selective Resampling: If the initial results suggest that other
+imbalanced variables are influencing the index significantly, consider
+resampling those as well. This selective approach can help balance the
+need for comprehensive data representation with the risks of overfitting
+and increased complexity.
+
+Iterative Process: Treat this as an iterative process. Begin with a base
+model and progressively include resampling for additional variables as
+needed, based on model evaluation and index stability.
+
+#### Undersampling and oversampling
 
 ```{r}
 library(ROSE)
-
+under <- ovun.sample(admit~., 
+                     data=train, 
+                     method = "under", 
+                     N = 192)$data
+table(under$admit)
 ```
 
 ## Bivariate analysis
@@ -810,8 +932,7 @@ selected_features <- names(selected_features)
 
 # New sample dataset
 data_f <- pamplonaf |> 
-  dplyr::select(selected_features, 
-                p6_2)
+  dplyr::select(selected_features, p6_2)
 
 # Fitting a logistic regression model
 linear_model <- glm(p6_2 ~ ., data = data_f, family = binomial)
@@ -986,167 +1107,52 @@ for (result_set in results_list) {
 
 ```
 
-# UNSUPERVISED MACHINE LEARNING
+# FEATURE ENGINEERING
 
-## Principal Component Analysis (PCA)
+Feature Transformation:
 
--   P10_4,5,6 -\> cameras
+-   Scaling and Normalization: Adjusting the scale of features to ensure
+    they have a similar range, which can improve model performance,
+    especially for algorithms that are sensitive to feature scaling.
+-   Encoding Categorical Variables: Converting categorical features into
+    numerical values that models can interpret, such as one-hot encoding
+    or label encoding.
 
-```{r}
-# Convert factors or characters to numeric
-perception_vars$p10_1 <- as.numeric(as.character(perception_vars$p10_1))
-perception_vars$p10_2 <- as.numeric(as.character(perception_vars$p10_2))
+Feature Selection:
 
-perception_vars$p10_4 <- as.numeric(as.character(perception_vars$p10_4))
-perception_vars$p10_5 <- as.numeric(as.character(perception_vars$p10_5))
-perception_vars$p10_6 <- as.numeric(as.character(perception_vars$p10_6))
+-   Choosing Relevant Features: Identifying and selecting the most
+    relevant features that contribute to the model's predictive power,
+    often using techniques like correlation analysis, feature importance
+    from models, or statistical tests.
+-   Dimensionality Reduction: Techniques like Principal Component
+    Analysis (PCA) or Feature Selection can reduce the number of
+    features, simplifying the model and potentially improving
+    performance.
 
-# Normalizamos p10_6 para que los valores más altos sean negativos (indicando una percepción negativa)
-perception_vars$normalized_p10_6 <- 5 - perception_vars$p10_6
+# REGRESSIONS
 
-# Creamos la nueva variable compuesta. antes era indice_percepcion_camaras
-perception_vars$cam_index <- (perception_vars$p10_4 + perception_vars$p10_5) - perception_vars$normalized_p10_6
-
-# Calculamos el valor mínimo y máximo de la nueva variable compuesta
-min_val <- min(perception_vars$cam_index, 
-               na.rm = TRUE)
-max_val <- max(perception_vars$cam_index, 
-               na.rm = TRUE)
-
-# Normalización min-max para ajustar el rango a [1, 4]
-perception_vars$cam_index <- 1 + (perception_vars$cam_index - min_val) * (3 / (max_val - min_val))
-
-# reondeo a enteros
-perception_vars$cam_index <- round(perception_vars$cam_index)
-
-# Inspeccionamos la nueva variable normalizada
-table(perception_vars$cam_index)
-
-```
-
-La nueva variable compuesta cam_index tiene un rango de 1 a 4, donde los
-valores representan la percepción general de las personas sobre las
-cámaras de seguridad en términos de su adecuación, mejora de seguridad
-ciudadana y posible invasión de la intimidad. Dado que la escala se
-deriva de la combinación de varias percepciones, la interpretación de
-los extremos es la siguiente
-
-1.  Percepción muy negativa o preocupación sobre las cámaras de
-    seguridad.
-
-2.  Percepción algo negativa.
-
-3.  Percepción algo positiva.
-
-4.  Percepción muy positiva
-
--   P10_1,2 -\> seg global nocturna
-
-```{r}
-# Combinamos p10_1 y p10_2. antes era seguridad_global_noche
-perception_vars$night_security <- perception_vars$p10_1 + perception_vars$p10_2
-
-# Calculamos el valor mínimo y máximo de la nueva variable
-min_val_seguridad <- min(perception_vars$seguridad_global_noche,
-                         na.rm = TRUE)
-max_val_seguridad <- max(perception_vars$seguridad_global_noche, 
-                         na.rm = TRUE)
-
-# Normalización min-max para ajustar el rango a [1, 4]
-perception_vars$night_security <- 1 + (perception_vars$seguridad_global_noche - min_val_seguridad) * (3 / (max_val_seguridad - min_val_seguridad))
-
-# Redondeamos los valores normalizados a enteros
-perception_vars$night_security <- round(perception_vars$night_security)
-
-# Inspeccionamos la nueva distribución de frecuencias
-table(perception_vars$night_security)
-
-```
-
--   p11_1,2 -\> seg global general
-
-```{r}
-perception_vars$global_security <- rowMeans(perception_vars[, c("p11_1", "p11_2")], 
-                                             na.rm = TRUE)
-
-# Redondeamos los valores normalizados a enteros
-perception_vars$global_security <- round(perception_vars$global_security)
-
-# Inspeccionamos la nueva variable
-table(perception_vars$global_security)
-
-```
-
-```{r}
-perception_vars <- perception_vars |> 
-  dplyr::select(-c("p10_1", "p10_2",
-                   "p10_4", "p10_5", "p10_6",
-                   "p11_1", "p11_2",
-                   "normalized_p10_6", 
-                   "p14"))
-```
-
--   Creating dummies
-
-```{r}
-# List of columns to be converted to factors
-factor_columns <- c('p7_2', 'p7_3', 'p7_4', 
-                    'p7_5', 'p7_6', 'p7_7', 
-                    'p7_8', 
-                    'p12')
-
-# Convert selected columns to factors
-perception_vars[factor_columns] <- lapply(perception_vars[factor_columns],
-                                          as.factor)
-
-
-options(contrasts = c("contr.treatment", "contr.treatment"))
-
-# Dummy encoding, dropping the first category as the reference
-percept_dummy <- model.matrix(~ . - 1, 
-                              data = perception_vars)
-
-# Convert the result to a data frame
-percept_dummy <- as.data.frame(percept_dummy)
-
-# Normalizing the data
-df_normalized <- scale(percept_dummy)
-
-```
-
-```{r}
-# Calculate the correlation matrix
-correlation_matrix <- cor(percept_dummy)
-
-# Set a threshold for correlation; features with absolute correlation above this threshold are considered redundant
-correlation_threshold <- 0.70  # Adjust this threshold as needed
-
-# Find highly correlated features
-highly_correlated <- findCorrelation(correlation_matrix, 
-                                     cutoff = correlation_threshold)
-
-# Remove highly correlated features
-df_reduced <- percept_dummy[, -highly_correlated]
-
-```
-
-```{r}
-# Perform PCA
-pca_result <- prcomp(df_reduced, 
-                     center = TRUE, 
-                     scale. = TRUE)
-
-# View the proportion of variance explained by each principal component
-summary(pca_result)
-
-```
-
-## Clustering
+Lo de stats I q tengo q ver cómo llamarlo claro no puedo hacer lineales.
+tendrán q ser logaritmicas o alfgo asi
 
 # SUPERVISED MACHINE LEARNING
 
+## Principal Component Analysis (PCA)
+
+```{r}
+# PCA
+pamplonaf <- pamplonaf |> is.numeric()
+pca = prcomp(pamplonaf, scale = T) # scale is to standardize the data set.
+summary(pca)
+```
+
+## Clustering Analysis
+
+# UNSUPERVISED MACHINE LEARNING
+
 ## Classification
 
-## Advanced regressions
+## Advanced regression
 
 # FINAL PREDICTIONS
+
+habrá que poner algo de validation y toda la movie

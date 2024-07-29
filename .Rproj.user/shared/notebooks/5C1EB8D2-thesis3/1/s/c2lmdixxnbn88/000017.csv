@@ -1,5 +1,0 @@
-"0","spca_result <- spca(df_reduced, K = 10, sparse = ""varnum"", para = 5)
-"
-"2","Error in if (sparse == ""varnum"" && length(active) >= paras[2]) { : 
-  missing value where TRUE/FALSE needed
-"
