@@ -7,85 +7,7 @@ editor_options:
     wrap: 72
 ---
 
-Dudas:
-
-The data imbalance you've observed, where the "yes" category
-(representing incidents or perceptions of crime) is underrepresented,
-can pose challenges in your analysis, particularly in the context of
-creating an objective crime index. This imbalance can lead to biased
-models and incorrect interpretations if not addressed properly. Here are
-the key issues and potential solutions:
-
-Issues with Data Imbalance 1. Biased Models: Machine learning models can
-become biased towards the majority class ("no" responses) because they
-are overrepresented. This can result in poor predictive performance for
-the minority class ("yes" responses), which is often the more critical
-class in this context.
-
-2.  Misleading Metrics: Metrics such as accuracy can be misleading in
-    imbalanced datasets. For example, a model that predicts the majority
-    class for every observation would still achieve a high accuracy,
-    despite failing to correctly predict the minority class.
-
-3.  Limited Information on Minority Class: The underrepresentation of
-    "yes" responses can lead to insufficient data to learn patterns or
-    correlations for this class, which may be crucial for your index.
-
-Applying resampling techniques to all imbalanced variables can be
-useful, but it depends on the specific goals of your analysis and the
-nature of each variable. Here are some considerations to help you
-decide:
-
-1.  Nature of the Variables and Their Role in the Index Critical
-    Variables: If certain variables are critical for the calculation of
-    your objective crime index (e.g., direct indicators of crime like
-    incidents of theft, violence), ensuring these are well-represented
-    in the dataset is essential. Resampling these variables can help
-    improve the model's understanding and predictions regarding the
-    occurrence of these incidents.
-
-Auxiliary Variables: For variables that provide supplementary
-information but are not central to the index, resampling may not be as
-crucial. The impact of these variables on the overall index may be
-limited, and excessive resampling could introduce noise or overfitting.
-
-2.  Impact of Resampling on Analysis Dimensionality and Model
-    Complexity: Over-resampling all variables can increase the dataset
-    size significantly and may lead to overfitting, especially if the
-    dataset becomes dominated by synthetic data. It can also make the
-    model more complex and harder to interpret.
-
-Specific Analysis Requirements: If your analysis includes feature
-importance evaluation or building a predictive model, ensuring that key
-predictors are balanced might be more critical than balancing all
-variables. However, if the analysis focuses on descriptive statistics or
-correlations, the need for resampling may be less pressing.
-
-3.  Evaluating the Imbalance's Impact Data Distribution Check: Evaluate
-    the distribution of the minority class in each variable. If some
-    variables have extremely low minority representation (e.g., less
-    than 1%), they might need more aggressive resampling or specialized
-    techniques like anomaly detection.
-
-Model Performance Metrics: Experiment with and without resampling for
-different variables and compare the performance metrics (e.g.,
-precision, recall, F1-score) for each approach. This can provide insight
-into whether resampling is necessary for all variables or just a subset.
-
-4.  Practical Approach Prioritize Key Variables: Start with resampling
-    techniques for the most critical variables directly related to crime
-    incidents (e.g., P5 and P6 variables). Evaluate the model's
-    performance and the resulting index's reliability.
-
-Selective Resampling: If the initial results suggest that other
-imbalanced variables are influencing the index significantly, consider
-resampling those as well. This selective approach can help balance the
-need for comprehensive data representation with the risks of overfitting
-and increased complexity.
-
-Iterative Process: Treat this as an iterative process. Begin with a base
-model and progressively include resampling for additional variables as
-needed, based on model evaluation and index stability.
+#  Dudas
 
 1.  **IMPUTACIÓN NA**. No sé si he hecho la imputación bien. La base de
     datos tiene variables binarias, ordinales, categóricas de varias
@@ -108,44 +30,67 @@ needed, based on model evaluation and index stability.
     problema es que me multiplicaba la base de datos y no era capaz de
     reducirla al número de observaciones originales (cosa que sí pude
     hacer con una sola variable cuando estaba testeando cart
-    normalizando los datos para corregir las diferencias en el tamaño de
-    la muestra). En principio creo que debería ser suficiente así...
-
-The visual difference in bar heights is due to the different number of
-observations rather than a change in the relative distribution of
-categories. The proportions are consistent between the original and
-imputed datasets, as indicated by the quantitative data you provided.
-Normalizing the Data for Comparison To make a proper visual comparison,
-you should normalize the frequency counts to proportions (relative
-frequencies) instead of raw counts. This adjustment will make it easier
-to compare the distributions, regardless of the total number of
-observations in each dataset. - Normalized plot comparison
-
--   Uso de unsupervised machine learning (si) y supervised machine
-    learning (no).
+    normalizando los datos (frecuencias relativas en lugar de absolutas)
+    para corregir las diferencias en el tamaño de la muestra). En
+    principio creo que debería ser suficiente así...
 
 <!-- -->
 
--   **ÍNDICE DE CRIMINALIDAD OBJETIVA**:
+2.  **Unsupervised machine learning** primero, tipo PCA y clustering
+    para construir cada índice en sí, y para ver qué peso tiene cada
+    variable identificada como significativa, pero enfocándonos
+    únicamente en estas variables y sin considerar el resto de la base
+    de datos. Entiendo que con el PCA se reduce la dimensionalidad, y
+    con el clustering aparecen más los grupos "naturales" dentro de los
+    datos (en ese caso, no sé si tendría más sentido utilizarlo con toda
+    la base de datos en vez de con esta selección de variables).
 
-    1.  Data imbalance.
+    **Supervised machine learning** una vez tengamos los índices para
+    predecirlos utilizando las variables de la base de datos, como las
+    sociodemográficas y el otro índice. Entiendo que así es como tiene
+    sentido integrar las variables en GAMA, porque permite establecer
+    las condiciones iniciales, modelar el comportamiento de los agentes,
+    etc.
 
-    2.  Encontré un balance anual de infracciones penales registradas en
-        Pamplona para el año 2022 (año de la encuesta), publicada por el
-        ministerio del interior, pero aparecen los datos totales, no he
-        conseguido encontrarlos por barrio (ni aquí, ni en ningún otro
-        sitio). Me habría gustado mucho hacer el índice por barrios como
-        comentamos para hacerlo más accurate y poder hacer una
-        comparativa por zonas de la ciudad, pero no tengo los datos
-        oficiales.
-        ![](images/Captura%20de%20pantalla%202024-07-29%20a%20las%200.56.51.png){width="539"}
+    Luego en GAMA, como no tengo un índice por barrio, habría que setear
+    las características para todo. Luego, lo que me raya más es el
+    comportamiento de los agentes, porque no entiendo bien cómo
+    podríamos hacer que se moviesen en función de ambos índices, si
+    sería el mismo para todo. Se me ocurre que con cosas tipo el tipo de
+    zona (que va incluida en el índice de percepción), la presencia de
+    cámaras, etc., pero me sigue faltando esa información, tendría que
+    ser verídica o me la puedo inventar si no la encuentro?
 
-        Sobre la info que recoge la encuesta, aunque sí pregunta por
-        situaciones que se hayan vivido, no pregunta por el barrio en el
-        que ocurrió (el barrio, en realidad, solo se menciona para
-        preguntar por cómo de seguro se siente allí en general y por la
-        noche solo, y para saber dónde se reside, y alguna pregunta más
-        del estilo).
+3.  **ÍNDICE DE CRIMINALIDAD OBJETIVA**:
+
+    -   **Data imbalance**. Hice un análisis descriptivo con la función
+        que creé para hacer los gráficos y he visto que todas las p7
+        están super imbalanced. Había pensado en probar los métodos que
+        aprendimos con marga para balancear los datos, pero no estaba
+        segura de si podía/tenía que hacerlo en todas ellas? He estado
+        leyendo que para variables que aportan información para el
+        índice pero no son centrales resamplear no es tan, tan
+        importante, pero igualmente es que podrían causar overfitting
+        (pero también podría causarlo hacer, por ejemplo, oversampling).
+
+        Pensé en hacer un modelo para ver las model performance metrics
+        pero no sabía muy bien como testearlo? Hacer un modelo para cada
+        variable (siendo esa variable la que queremos predecir)?
+
+        ![](images/clipboard-1432744130.png){width="439"}
+
+    -   Encontré un **Balance anual de infracciones penales registradas
+        en Pamplona** para el año 2022 (año de la encuesta), publicada
+        por el ministerio del interior, pero aparecen los datos totales,
+        no he conseguido encontrarlos por barrio (ni aquí, ni en ningún
+        otro sitio). Me habría gustado mucho hacer el índice por barrios
+        como comentamos para hacerlo más accurate y poder hacer una
+        comparativa por zonas de la ciudad, pero al no tener datos
+        oficiales, lo veo complicado. Además, la info que recoge la
+        encuesta sobre situaciones violentas vividas, no pregunta por el
+        barrio en el que ocurrió. El barrio, en realidad, solo se
+        menciona para preguntar para saber dónde se reside, cómo de
+        seguro se siente allí en general y por la noche.
 
         Lo que he hecho entonces ha sido coger esta tabla, quedarme sólo
         con criminalidad convencional y agrupar los delitos por
@@ -156,11 +101,27 @@ observations in each dataset. - Normalized plot comparison
         debería hacer como una proporción de cuánta gente la ha
         sufrido...? no sé cómo hacerlo.
 
--   **ÍNDICE DE PERCEPCIÓN DE LA INSEGURIDAD**.
+        ![](images/Captura%20de%20pantalla%202024-07-29%20a%20las%200.56.51.png){width="539"}
 
-    -   PCA
+4.  **ÍNDICE DE PERCEPCIÓN DE LA INSEGURIDAD**.
 
--   Tipos de zona
+    -   Con el tema del data imbalance pasa algo similar a lo anterior.
+
+        ![](images/clipboard-2119505057.png){width="470"}
+
+    -   Empecé a hacer el PCA de este, quité algunas variables que no me
+        parecían tan relevantes y luego hice un poco de feature
+        engineering para crear nuevas variables a partir de otras. Tipo
+        unas que hablaban de cámaras de seguridad, otras de seguridad
+        nocturna, otras de seguridad general (combiné barrio y ciudad,
+        por ejemplo), y eso me ayudó a reducir el número de PC que
+        salían (pasé de 42 o así a 21). Pero no sé qué más hacer para
+        reducirlo más porque la mayoría de las variables son ordinales,
+        así que las convierto en dummies, y creo que eso mete mucho
+        ruido. Las nuevas variables que creé al principio las volví a
+        poner ordinales (1-4), pero luego las dejé con el nuevo rango
+        que me salía (que era más o menos 7/8 categorías) para tratarla
+        como numérica pero no sé si eso está bien.
 
 ```{r}
 library(tidyverse)  # Conjunto de paquetes para manipulación de datos
@@ -1143,10 +1104,4 @@ summary(pca_result)
 
 ## Clustering
 
-# SUPERVISED MACHINE LEARNING
-
-## Classification
-
-## Advanced regressions
-
-# FINAL PREDICTIONS
+# 
