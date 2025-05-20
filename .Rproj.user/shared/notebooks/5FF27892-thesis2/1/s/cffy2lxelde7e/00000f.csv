@@ -1,3 +1,0 @@
-"0","# Cargar los datos"
-"0","pamplona_spss <- as.data.frame(read_sav(""23-085 - Ayuntamiento de Navarra (SPSS01).sav""))"
-"0",""

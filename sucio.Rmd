@@ -1,0 +1,420 @@
+---
+title: "sucio"
+output: html_document
+date: "2025-05-18"
+---
+
+# PRUEBA 8 ABRIL
+
+#### rare categories (corregir explicaciones)
+
+```{r}
+# Drop unused factor levels (those with value = 0 but i think it would be enough with the next step)
+pampre[] <- lapply(pampre, function(x) {
+  if (is.factor(x)) droplevels(x) else x
+})
+
+```
+
+#### creating the best model
+
+```{r}
+# SOCIODEMOGRÁFICAS
+model_soc <- lm(gen_ins ~ gender + education + income + employment + gender*income, data = pampre)
+summary(model_soc)
+
+```
+
+```{r}
+# P16 ESTÁN BIEN. conflicto de convivencia en el barrio en el que vive
+# P18 LA QUITO, NO ES SIGNIFICATIVA. medio de comunicación para informarse. 
+# P15 TAMPOCO PARECE DECIR NADA, NO ES SIGNIFICATIVA. tiempo viviendo en el barrio.
+
+# no sé si esta p7 y las p10 debería meterlas en el safety perception index. despues de hacer los modelos y ordenarlo todo, probar. 
+model_rest <- lm(gen_ins ~ p16 + victimized + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p18 + p14z, data = pampre)
+
+summary(model_rest)
+vif(model_rest)
+```
+
+### **OLS assumptions diagnosis**
+
++----------------------------+---------------------------+----------------------------------------------------+
+| Assumption                 | Tool                      | Code                                               |
++============================+===========================+====================================================+
+| **Linearity**              | Residuals vs. Fitted plot | `plot(model, 1)`                                   |
++----------------------------+---------------------------+----------------------------------------------------+
+| **Normality of residuals** | QQ Plot + Shapiro         | `plot(model, 2)` + `shapiro.test(model$residuals)` |
++----------------------------+---------------------------+----------------------------------------------------+
+| **Homoscedasticity**       | Scale-location plot       | `plot(model, 3)` + `car::ncvTest(model)`           |
++----------------------------+---------------------------+----------------------------------------------------+
+| **Influential obs.**       | Cook’s Distance           | `plot(model, 4)`                                   |
++----------------------------+---------------------------+----------------------------------------------------+
+| **Autocorrelation**        | Durbin-Watson test        | `car::durbinWatsonTest(model)`                     |
++----------------------------+---------------------------+----------------------------------------------------+
+| **Multicollinearity**      | VIF / correlation         | `car::vif(model)` + `corrplot()`                   |
++----------------------------+---------------------------+----------------------------------------------------+
+
+#### **Multicollinearity**
+
+To assess multicollinearity among the independent variables included in the regression model predicting the first CATPCA component (`catpca1`), we computed **Generalized Variance Inflation Factors (GVIFs)** using the method proposed by Fox and Monette (1992). This method extends traditional VIF diagnostics to categorical variables with more than one degree of freedom, making it suitable for models that include both numeric and factor variables. Because raw GVIF values tend to increase with the number of levels in a factor, we interpret the adjusted metric, GVIF\^(1/(2×Df)), which rescales the GVIF to be comparable across variables. According to standard thresholds in the literature, **values below 2 are considered acceptable and indicative of negligible multicollinearity**.
+
+In the sociodemographic model, **all predictors fell below the conservative GVIF threshold of 5**, suggesting that multicollinearity is not a significant concern. The highest observed adjusted GVIF value was 2.13 for the variable `age`, which remains within acceptable limits but may warrant attention in later modeling stages. As a general guideline, if GVIF\^(1/(2×Df)) exceeds 5—or more conservatively, 10—researchers should consider modifying the model by dropping the variable, combining highly correlated predictors, or using regularization techniques such as LASSO regression (discussed in the next step of the analysis).
+
+It is important to note that VIFs are computed once per model and depend solely on the relationships among the independent variables; they do not need to be recalculated for each dependent variable. Nor is it necessary to run VIFs for each possible subset of predictors—though examining different thematic blocks (e.g., sociodemographic vs. attitudinal variables) can be informative when building models incrementally. **ESTO ES MÁS PARA MÍ, EXPLICATIVO, QUE PARA EL TFM**
+
+On the other hand, **when including `p19` and `crime_index` as predictors, the model produced an error indicating the presence of aliased coefficients**. This typically results from perfect multicollinearity or, in some cases, a variable having no variance. Indeed, `crime_index` was found to be constant across all observations and thus unsuitable for regression. Since variables with no variation provide no explanatory power and can destabilize the estimation process, `crime_index` was excluded from the final model. Nonetheless, it remains conceptually relevant to the broader analysis and may be incorporated later via interaction terms, weighting schemes based on victimization experience, or more flexible modeling frameworks **PENSAR QUÉ HACER CON ESO**
+
+```{r}
+# sociodemographic variables 
+model_soc <- lm(gen_ins ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre)
+vif(model_soc)
+
+library(car)
+# when i include p19 and crime_index (both at the same time or separately) and run the vif() function, the following error arises: Error in vif.default(model_soc) : there are aliased coefficients in the model. so i guess i need to delete this variables from my model? i dont understand. 
+# CRIME INDEX cannot be included bc it is constant (has no variability) but if i keep it from my model, how can i use it later on in the gama model. Should i add weights to its observations depending on the experience with past victimisation? it's the only thing i can imagine. 
+# on interpreting GVIF https://stats.stackexchange.com/questions/70679/which-variance-inflation-factor-should-i-be-using-textgvif-or-textgvif
+
+```
+
+#### Linearity
+
+The residuals are approximately centered around zero, which supports the assumption of unbiased predictions. However, the presence of a curved trend in the residuals suggests a potential violation of the linearity assumption, indicating that the model may not fully capture the relationship between the predictors and the dependent variable.
+
+```{r}
+# Linearity. Residuals vs Fitted plot
+plot(model_soc, 1)
+
+```
+
+#### Normality of the residuals
+
+The Q-Q (quantile-quantile) plot of standardized residuals was used to assess the normality assumption of the linear regression model. The points generally follow the reference line, indicating that the residuals approximate a normal distribution. However, slight deviations are observed in the tails, particularly on the right-hand side, suggesting the presence of a few outliers or mild skewness. While these deviations do not severely compromise the validity of the model, they indicate that the assumption of perfectly normal residuals is not fully met.
+
+This visual evidence is supported by the Shapiro-Wilk test (W = 0.976, p \< 0.001), which statistically rejects the null hypothesis of normality. However, given the large sample size (n = 828), the test is highly sensitive to minor deviations. *Since linear regression is relatively robust to such departures in large samples, and to further mitigate their influence on inference, robust standard errors (HC1) were applied in the model estimation. **TAL VEZ QUITAR ESTO ULTIMO EN CURSIVA.***
+
+```{r}
+# Normality of the residuals
+plot(model_soc, 2) # QQ-PLOT
+shapiro.test(resid(model_soc)) 
+
+# THIS CAN BE HAPPENING BECAUSE OUR DEPENDENT VARIABLE IS NOT NORMALY DISTRIBUTED -->  One possibility would be to transform the dependent variable (glbccrisk) in order to induce a normal distribution. Another might be to add a polynomial term to the independent variable (ideology) as was done above. In either case, you would need to recheck the residuals in order to see if the model revisions adequately dealt with the problem. We suggest that you do just that!
+
+```
+
+```{r}
+model_soc$residuals %>% # Pipe the residuals to a data frame
+  data.frame() %>% # Pipe the data frame to ggplot
+  ggplot(aes(model_soc$residuals)) +
+  geom_density(adjust = 2) +
+  stat_function(fun = dnorm, args = list(mean = mean(model_soc$residuals),
+                                         sd = sd(model_soc$residuals)),
+                color = "red")
+```
+
+#### **Homoscedasticity**
+
+To evaluate the assumption of homoscedasticity, the Non-Constant Variance (NCV) test was conducted. The results indicate a statistically significant violation of this assumption (χ² = 48.79, df = 1, p \< 0.001), suggesting that the variance of the residuals is not constant across levels of the fitted values. This aligns with the pattern observed in the residuals vs. fitted plot, where a slight funnel shape indicated increasing spread in residuals with higher predicted values.
+
+The Scale-Location plot, which displays the square root of the absolute standardized residuals against the fitted values, was examined to further assess the assumption of homoscedasticity. A horizontal red line represents the ideal scenario of constant variance. In the current plot, a mild upward trend is visible, indicating that the spread of the residuals slightly increases with higher fitted values.
+
+```{r}
+# Homoscedasticity. Scale-location plot
+library(car)
+car::ncvTest(model_soc)
+
+plot(model_soc, 3)
+spreadLevelPlot(model_soc)
+
+```
+
+#### **Influential observations**
+
+To assess the influence of individual observations on the model’s estimates, Cook’s Distance values were examined. While most observations fall well below the conventional threshold (often 4/n, which equals approximately 0.0048 in this case given n = 828), a few cases—specifically observations 35, 409, and 743—stand out with relatively higher values. Nonetheless, given that these influential points do not exceed 0.1, they are not extreme enough to unduly distort the model’s results. Considering the size of the dataset and the moderate influence of these cases, they were retained in the final analysis.
+
+```{r}
+# Influential observations. Cook's distance
+plot(model_soc, 4)
+cooks.distance(model_soc)
+
+#a significant p-value indicates extreme case for review
+outlierTest(model_soc)
+
+plotdb<-dfbetaPlots(model_soc, id.n=3)
+influencePlot(model_soc)
+
+# esto variable a variable creo...
+pampre[c(35,465,482,743),c("catpca1", "gender")]
+
+crPlots(model_soc)
+
+
+```
+
+#### **Autocorrelation**
+
+To evaluate the presence of autocorrelation in the residuals, the Durbin-Watson test was conducted. The resulting statistic (DW = 2.08, p = 0.226) does not provide evidence to reject the null hypothesis of no autocorrelation. This suggests that the residuals are approximately independent, fulfilling one of the key assumptions of linear regression. **The lack of significant autocorrelation indicates that the model errors are not systematically correlated across observations, which supports the validity of the model’s estimates**.
+
+```{r}
+# Autocorrelation. Durvin-watson test 
+  # check independence of errors (if data are clustered or ordered)
+car::durbinWatsonTest(model_soc)
+
+```
+
+### Assessing violation of OLS principles - GLS assumptions
+
+```{r}
+
+residualPlots(model_soc)
+```
+
+no hago log porque son categoricas. no hago scaling porque ya scalo la independiente lal principio y no cambia nada.
+
+#### Robust linear regression
+
+**Pros**: Keeps coefficients interpretable (like OLS), deals with both outliers and variance issues.
+
+```{r}
+library(MASS)
+model_robust <- rlm(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre)
+summary(model_robust)
+
+```
+
+#### OLS with robust standard errors
+
+```{r}
+library(lmtest)
+library(sandwich)
+model <- lm(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre)
+coeftest(model, vcov = vcovHC(model, type = "HC1"))
+
+```
+
+#### **Generalized Linear Model (GLM) with Identity Link**
+
+```{r}
+glm_model <- glm(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre, family = gaussian(link = "identity"))
+
+summary(glm_model)
+```
+
+```{r}
+library(brms)
+model_bayes <- brm(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre, family = gaussian())
+summary(model_bayes)
+
+```
+
+# PRUEBA APARTE
+
+#### LASSO. esto no tiene sentido aquí.
+
+```{r}
+set.seed(123) 
+in_train <- createDataPartition(pampre$catpca1, p = 0.80, list = FALSE) 
+training <- pampre[ in_train,]
+testing <- pampre[-in_train,]
+
+cat("Training rows:", nrow(training), "- Testing rows:", nrow(testing), "\n")
+
+
+```
+
+```{r}
+
+# Drop unused levels for all factor variables
+training[] <- lapply(training, function(x) {
+  if (is.factor(x)) droplevels(x) else x
+})
+
+testing[] <- lapply(testing, function(x) {
+  if (is.factor(x)) droplevels(x) else x
+})
+
+```
+
+```{r}
+# Function to identify rare levels in all factor/character variables
+get_rare_levels <- function(data, threshold = 2) {
+  rare_levels <- list()
+  
+  for (var in names(data)) {
+    if (is.factor(data[[var]]) || is.character(data[[var]])) {
+      level_counts <- table(data[[var]])
+      rare <- names(level_counts[level_counts <= threshold])
+      if (length(rare) > 0) {
+        rare_levels[[var]] <- rare
+      }
+    }
+  }
+  
+  return(rare_levels)
+}
+
+
+# identify levels in training 
+rare_levels <- get_rare_levels(training, threshold = 2)
+print(rare_levels)
+
+# identify levels in testing 
+rare_levels <- get_rare_levels(testing, threshold = 2)
+print(rare_levels)
+
+# claro pero aquí que hago cambio las cosas? teniendo en cuenta que cada uno va a tener diferentes categorias de predifcción... nose 
+
+# collapse levels into "other". ESTO NO LO VOY A USAR. 
+collapse_rare_levels <- function(data, rare_levels_list) {
+  for (var in names(rare_levels_list)) {
+    data[[var]] <- as.character(data[[var]])  # ensure it's not factor
+    data[[var]][data[[var]] %in% rare_levels_list[[var]]] <- "Other"
+    data[[var]] <- as.factor(data[[var]])
+  }
+  return(data)
+}
+pampre_clean <- collapse_rare_levels(pampre, rare_levels)
+
+# delete levels
+rows_to_keep <- rep(TRUE, nrow(pampre))  # start by keeping everything
+
+for (var in names(rare_levels)) {
+  rows_to_keep <- rows_to_keep & !(pampre[[var]] %in% rare_levels[[var]])
+}
+
+# Filter once
+pampre_filtered <- pampre[rows_to_keep, ]
+
+
+
+table(testing$p13b)
+```
+
+```{r}
+ModelS = catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z
+
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 5, 
+                     repeats = 1)
+
+
+lasso_grid <- expand.grid(fraction = seq(.01, 1, length = 100))
+
+lasso_tune <- train(ModelS, data = training,
+                    method='lasso',
+                    preProc=c('scale','center'),
+                    tuneGrid = lasso_grid,
+                    trControl=ctrl)
+
+test_results <- data.frame(catpca1 = testing$catpca1)
+test_results$lasso <- predict(lasso_tune, testing)
+postResample(pred = test_results$lasso,  obs = test_results$catpca1)
+
+
+```
+
+```{r}
+library(glmnet)
+
+
+# Assuming you have a data frame `your_data`
+# Transform dependent variable if necessary (e.g., scaling)
+catpca1_scaled <- scale(your_data$catpca1)  # Scaling the dependent variable
+
+# Define your independent variables (ensure you are not including the dependent variable in X)
+X <- model.matrix(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre)[,-1]  # Exclude the intercept column
+
+# Apply LASSO regression with cross-validation
+lasso_model <- cv.glmnet(X, catpca1, alpha = 1)  # alpha = 1 for LASSO, cv = cross-validation
+
+# View the best lambda (regularization strength)
+best_lambda <- lasso_model$lambda.min
+print(paste("Best lambda: ", best_lambda))
+
+# Get the coefficients for the best model
+coef(lasso_model, s = "lambda.min")
+
+# Plot the cross-validation results
+plot(lasso_model)
+
+```
+
+WLS
+
+```{r}
+model_wls <- lm(dependent_var ~ predictor1 + predictor2 + ..., data = your_data, weights = weights)
+
+```
+
+*Since linear regression is relatively robust to such departures in large samples, and to further mitigate their influence on inference, robust standard errors (HC1) were applied in the model estimation. **TAL VEZ QUITAR ESTO ULTIMO EN CURSIVA.***
+
+#### **Robust Standard Errors with `vcovHC` (Sandwich Estimator)**
+
+In standard linear regression, one key assumption is **homoscedasticity**, meaning the variance of residuals remains constant across all levels of the predictors. When this assumption is violated—as indicated by non-constant variance (heteroscedasticity)—the usual standard errors become unreliable, leading to biased p-values and confidence intervals. To address this, we compute **robust standard errors** using the Huber-White sandwich estimator. This method adjusts the standard errors of the regression coefficients without altering the coefficient estimates themselves, thereby providing more reliable inference when the assumption of constant variance is violated.
+
+**NO ENTIENDO**: The robust regression output indicated that several variables, particularly related to employment status and residential areas (e.g., `employment5`, `employment6`, `barrio2`, `barrio3`, `barrio5`, `barrio6`, `barrio8`), retained statistical significance under this correction. Additionally, some psychological or perceptual measures (e.g., `p16`, `p13a12`, `p13b8`, `p14z`) were also found to be strongly significant, suggesting a meaningful association with the dependent variable derived from the CATPCA analysis. A warning regarding near-singular covariance matrices for a few observations with high leverage (cases 465, 482, 651) was issued; while this does not invalidate the estimates, it suggests that those cases should be reviewed for potential influence. Overall, the use of HC1 robust standard errors confirms that the regression results are generally stable, and key predictors remain statistically significant even after accounting for heteroscedasticity.
+
+```{r}
+# Compute robust standard errors using Huber-White (type HC1)
+library(sandwich)
+library(lmtest)
+coeftest(model_soc, vcov = vcovHC(model_soc, type = "HC1"))
+
+
+hatvalues(model_soc)
+rstudent(model_soc)
+influencePlot(model_soc)
+
+```
+
+```{r}
+library(sandwich)
+library(lmtest)
+est <- coef(model_soc)
+se <- sqrt(diag(vcovHC(model_soc, type = "HC1")))
+confint_robust <- cbind(
+  est - 1.96 * se,
+  est + 1.96 * se
+)
+colnames(confint_robust) <- c("2.5 %", "97.5 %")
+```
+
+#### Robust regression to mitigate outlier influence
+
+While robust standard errors correct the **inference**, they do **not adjust the model's coefficients**. If the dataset contains **influential outliers**—observations that strongly affect the regression line—the actual coefficient estimates might still be biased. To address this, we use **robust regression**, which applies **down-weighting** to outliers during model estimation. This produces coefficient estimates that are less sensitive to extreme values, offering a more stable and reliable fit in the presence of outliers. **HACE FALTA QUE HAGA ESTO SI COOKS DISTANCE SOLO SON TRES???**
+
+```{r}
+# Option 3: Use robust regression
+# This can down-weight the outliers:
+library(MASS)
+model_robust <- rlm(catpca1 ~ gender + agez + nationality + education + income + employment + barrio + p5_1 + p5_2 + p5_3 + p5_4 + p5_5 + p5_6 + p5_7 + p5_8 + p6_1 + p6_2 + p6_3 + p16  + p7_7 + p10_4 + p10_5 + p10_6 + p13a + p13b + p15 + p16 + p18 + p14z, data = pampre)
+summary(model_robust)
+
+```
+
+```{r}
+library(corrplot)
+corrplot(cor(pampre[, predictors]), method = "number")
+
+```
+
+LASSO
+
+From Session 1: Try **LASSO** if your adjusted R² is low. Use the selected variables in your final multivariate model.
+
+```{r}
+library(glmnet)
+X <- model.matrix(cbind(feels_safe_neighborhood, fear_of_crime, trust_in_police) ~ ., data = pamplonaf)[,-1]
+Y <- as.matrix(pamplonaf[, c("feels_safe_neighborhood", "fear_of_crime", "trust_in_police")])
+
+cv_model <- cv.glmnet(X, Y, alpha = 1)  # LASSO
+coef(cv_model, s = "lambda.min")
+
+```
+
+deberia usar advanced regression: notas del final assignment de advanced modeling
+
+# Advanced Regression
+
+Advanced regression encompasses a suite of techniques beyond basic linear regression, designed to handle complex, non-linear relationships, interactions among variables, and issues like heteroscedasticity (unequal variance) and multicollinearity (high correlation among predictors). As previously stated, we will be working with numeric variable, 'like', to see participants rating of liking the partner. We delete match as we must ensure the integrity and independence of our predictive features. As stated previously, this two variables may be too related and keeping match can introduce bias about the outcome we aim to predict.
