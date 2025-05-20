@@ -7,7 +7,72 @@ editor_options:
     wrap: 72
 ---
 
-#  Dudas
+# Soluciones
+
+1.  **Imputación NA**. Bien hecho.
+
+2.  **Unsupervised y supervised machine learning**. PCA sirve como tipo
+    de clustering para recalcular y agrupar ordenando
+
+3.  Para PCA. tipo de categoría mayor que 5 o 6. optimal scaling, etc.
+    <https://stats.stackexchange.com/questions/215404/is-there-factor-analysis-or-pca-for-ordinal-or-binary-data/215483#215483>
+
+    categorical PCA: rank PCA, princals (paquete hifi). factominer es el
+    paquete más usado de PCA
+
+    índice numérico. indice correle con datos objetivos policiales o lo
+    que sea pero tengo que decidir los pesos q le doy a la variable
+    (maneras de pesar esto de forma más objetiva x ej mirando el código
+    penal y ver el número de años q caen para cada delito), lo
+    multiplico y lo sumo todo, el valor absoluto no es del todo
+    interpretable. cuando crece crece etc. loimportante es que el índice
+    sea monotónico.
+
+    trabajar con los números relativos de los delitos en lugar de los
+    absolutos.
+
+4.  imbalance. puede que no sea un problema. corregir el desbalanceo a
+    veces es malo.
+
+5.  mirar en openstreets maps pamplona. hay paquetes para R, OSM data,
+    probar qué info tienen de pamplona. si nno sacar de openstreet maps
+    los puntos de interés y en función del punto de interés en un radio
+    x y si sale x% q es comercios, es una zona comercial. es más
+    trabajo. Landuse:
+    <https://wiki.openstreetmap.org/wiki/Tag:landuse=commercial>
+
+    una manera sencilla de sacar indice de iluminación es a imagen de
+    satélite de noche y valor del pixel. conseguir un raster (imagen con
+    coordenadas q es puro pixel y cada pixel está geolocalizado y si
+    consigo imagen de pamplona de noche sin nubes tengo el nivel de
+    iluminación por cada píxel). si lo incorporo a una variable por
+    barrio y lo que se puede hacer es una media con todos los píxeles
+    por barrio para sacar cómo de iluminado está. para dejar la media
+    bien pulida: perimetro del barrio. dentro hay edificios, q los da
+    open street map, habria que quitarle los edificios, se proyecta en
+    el ruster y se hace la media de esos pixeles, es decir sin los
+    edificios.
+
+6.  quito del indice de percepcion las camaras
+
+7.  comisaría: un circulo al rededor y cuanto más te alejas más
+    inseguridad y más probable q ocurra un delito. cogerlo con pinzas
+    por el tema de aglomeraciones etc. mejor descartamos esto.
+
+8.  la percepcion va definida dentro de los agentes. con las
+    sociodemográficas. el criminal no sabe lo que percibes pero una
+    actua de una manera más o menos cauta y te hace más o menos
+    susceptible a q te pase algo. las variables de autoproteccion van
+    por fuera en el modelo y si son significativas las meto en gama en
+    la definición de los agentes. da una probabilidad de que suceda un
+    evento (sentirse más o menos inseguro), los parámetros no tienen por
+    qué ser o no correctos luego cada cual los puede modificar. el motor
+    del simulador va tirando probabilidades en funcion de eventos que va
+    cargando.
+
+# 
+
+# Dudas
 
 1.  **IMPUTACIÓN NA**. No sé si he hecho la imputación bien. La base de
     datos tiene variables binarias, ordinales, categóricas de varias
@@ -33,6 +98,10 @@ editor_options:
     normalizando los datos (frecuencias relativas en lugar de absolutas)
     para corregir las diferencias en el tamaño de la muestra). En
     principio creo que debería ser suficiente así...
+
+    *quería intentar la imputación con cross validation pero no sabía
+    cómo manejar las 4095 observaciones resultantes (los dos códigos que
+    intenté están en Thesis.rmd)*
 
 <!-- -->
 
@@ -77,7 +146,7 @@ editor_options:
         pero no sabía muy bien como testearlo? Hacer un modelo para cada
         variable (siendo esa variable la que queremos predecir)?
 
-        ![](images/clipboard-1432744130.png){width="439"}
+        ![](images/clipboard-1432744130.png){width="586"}
 
     -   Encontré un **Balance anual de infracciones penales registradas
         en Pamplona** para el año 2022 (año de la encuesta), publicada
@@ -107,7 +176,7 @@ editor_options:
 
     -   Con el tema del data imbalance pasa algo similar a lo anterior.
 
-        ![](images/clipboard-2119505057.png){width="470"}
+        ![](images/clipboard-2119505057.png){width="669"}
 
     -   Empecé a hacer el PCA de este, quité algunas variables que no me
         parecían tan relevantes y luego hice un poco de feature
@@ -124,29 +193,13 @@ editor_options:
         como numérica pero no sé si eso está bien.
 
 ```{r}
-library(tidyverse)  # Conjunto de paquetes para manipulación de datos
-library(skimr)      # Paquete para análisis exploratorio
-library(DataExplorer)  # Paquete para análisis exploratorio visual
-library(labelled)
-library(stringr)
-library(dplyr)
-library(tidyr)
-library(forcats)
+if (!require("pacman")) install.packages("pacman")
 
-library(haven)
-library(memisc) #dezcription function
-library(DataExplorer)
-library(caret) 
-library(FactoMineR)
-library(factoextra)
-library(mice)
-library(missMDA)
-library(cowplot)
-library(cv)
-
-library(janitor)  # For tabyl function
-library(pdftools)
-
+pacman::p_load(tidyverse, skimr, DataExplorer,labelled,
+               stringr, dplyr, tidyr, forcats,haven,
+               memisc, DataExplorer, caret, FactoMineR,
+               factoextra, mice, missMDA, cowplot, cv,
+               janitor,pdftools)
 
 ```
 
@@ -159,10 +212,13 @@ delitos <- pdf_text("Balance-de-Criminalidad-Cuarto-Trimestre-2022.pdf")[462]
 
 # Data cleaning and preprocessing
 
+## Crime data
+
 ```{r}
 # Cleaning crime data
 lines <- strsplit(delitos, 
                   "\n")[[1]]
+
 lines <- lines[lines != "" & !grepl("^\\s+$", 
                                     lines)]
 split_lines <- strsplit(lines, 
@@ -213,13 +269,29 @@ delitosf <- delitos |>
 
 ```
 
+# Pamplona data
+
+## Data cleaning and preprocessing
+
+First, values such as `98`, `99`, and `999` in `pamplona_spss` represent
+missing responses and are converted to `NA` to standardize missing data
+representation.
+
 ```{r}
-# Reemplazar los valores 98 y 99 por NA. 
+# Converting values 98 and 99 into NA 
 pamplona_spss[pamplona_spss == 98 | pamplona_spss == 99 | pamplona_spss == 999] <- NA
 
 ```
 
--   Clean SPSS attributes
+**REVISAR**: The Pamplona dataset, originally imported from SPSS,
+contains variables with labelled values. Labelled variables hold both
+numeric codes and descriptive labels, with codes representing categories
+(e.g., “1 = Male”, “2 = Female”). Using `mutate` with
+`across(where(is.labelled), ~ as_factor(.))`, these labelled variables
+are converted to R factors, allowing us to retain their descriptive
+labels. Converting labelled variables in this way ensures that
+categorical data is treated appropriately in analysis and allows for
+descriptive interpretation.
 
 ```{r}
 # Convertir variables etiquetadas a factores con etiquetas descriptivas
@@ -227,8 +299,25 @@ pamplona <- pamplona_spss |>
   mutate(across(where(is.labelled), 
                 ~ as_factor(.)))
 
-# Remover atributos innecesarios
-remove_unnecessary_attributes <- function(df) {
+```
+
+Converting all variable names to lowercase to ensure uniformity and
+reduce the risk of errors.
+
+```{r}
+# Converting variable names to lower case
+names(pamplona) <- tolower(names(pamplona))
+```
+
+SPSS datasets often include additional metadata, such as variable labels
+or formatting attributes, which can clutter the R environment. To clean
+the dataset, I define a function, `remove_attributes`, which removes
+labels that contain the full survey question text and SPSS formatting
+metadata.
+
+```{r}
+# Removing unnecessary attributes from the variables (the description containing the question itself, keeping just the variable code)
+remove_attributes <- function(df) {
   for (col in names(df)) {
     attr(df[[col]], 
          "label") <- NULL
@@ -239,10 +328,21 @@ remove_unnecessary_attributes <- function(df) {
   return(df)
 }
 
-pamplona <- remove_unnecessary_attributes(pamplona)
+pamplona <- remove_attributes(pamplona)
 
+```
 
-# Convertir factores de vuelta a factores con valores numéricos originales
+To facilitate specific analyses, it may be necessary to work with
+numeric representations of categorical variables. The function
+`convert_to_numeric_factor` is applied to convert factor levels back
+into their original numeric codes. For each factor, the function
+reassigns levels to their numeric order, converting each level to a
+corresponding integer. This process is essential for analyses that
+require numeric input, such as regression models that operate on
+quantitative values rather than categorical labels.
+
+```{r}
+# Converting the variables to numeric factors, as in the original database, so we can work with the numeric values of the categories
 convert_to_numeric_factor <- function(column) {
   if (is.factor(column)) {
     levels(column) <- as.character(1:length(levels(column)))
@@ -252,38 +352,76 @@ convert_to_numeric_factor <- function(column) {
   }
 }
 
-# para trabajar con los valores numricos de las categorias de los factores
-pamplona <- pamplona %>%
+pamplona <- pamplona |> 
   mutate(across(where(is.factor), 
                 convert_to_numeric_factor))
 
-# si quiero volver a los numericos solo tengo que aplicar la función del prinicpio de este chunk
+
+# in case i want to go back to the numeric values i just have to use themutate(across(where(is.labelled), ~ as_factor(.))), as at the beggining of this section
+
 
 ```
 
--   Recoding "nacimiento": 1. españa, 2. otros
+The variable “Nacimiento” (P4) consists of four categories: Pamplona,
+Resto de Navarra, Resto de España, and Otros, indicating a respondent’s
+place of birth. For the purposes of this analysis, this variable is not
+of direct interest, so it has been recoded into a simplified version,
+`np4`, with two broader categories: 1. Spain and 2. Others. Here,
+"Spain" encompasses individuals born in Pamplona, Resto de Navarra, and
+Resto de España, while "Others" represents individuals born outside
+Spain.
+
+The auxiliary variable `p4_otros` specifies the countries for
+respondents born outside Spain. In cases where `p4_otros` is neither
+empty nor contains only a dash (`"-"`), `np4` is set to **2** (Others).
+Otherwise, if no specific condition applies, `np4` adopts the numeric
+value of `p4` directly, ensuring any remaining cases in `p4` are
+retained in their original form.
+
+In summary, `np4` is created as a streamlined version of `P4`, with
+values determined based on the combined conditions of `p4` and
+`p4_otros`:
+
+-   **1** for individuals born in Spain (as represented by certain
+    values in `p4`),
+
+-   **2** for individuals born outside Spain (identified by specific
+    content in `p4_otros`),
+
+-   The numeric value of `p4` if neither of the above conditions is met.
+
+**Regarding `p17_otros`, values represented as `"-"` are converted to
+`NA`, enhancing data clarity by standardizing missing or irrelevant
+responses. Further investigation is warranted to assess the relationship
+between `p17_otros` and `p17`, particularly if `p17` is categorical. It
+may be necessary to reclassify `p17` to ensure alignment with the
+objectives of this analysis if additional granularity in response
+categories proves beneficial.**
 
 ```{r}
-# Convertir los nombres de todas las variables a minúsculas
-names(pamplona) <- tolower(names(pamplona))
-
-# Crear y limpiar la nueva variable nP4
+# creating nP4
 pamplona <- pamplona |> 
-  mutate(np4 = case_when(
+  mutate(nationality = case_when(
            p4 %in% c(1, 2, 3) ~ 1,
-           !is.na(p4_otros) & p4_otros != "-" ~ 2,
+           !is.na(p4_otros) & p4_otros != "-" ~ 2, # 
            TRUE ~ as.numeric(as.character(p4))  # mantener otros valores P4 si hay
          ),
     p17_otros = na_if(p17_otros, 
                       "-")) |> # convertir "-" en NA en p17_otros
-  relocate(np4, 
+  relocate(nationality, 
            .before = p4)
 
 ```
 
 ## Feature selection
 
--   Deleting and renaming some variables
+Feature selection is a crucial step in preparing the data for analysis.
+By selectively retaining relevant variables, I aim to reduce noise,
+improve interpretability, and enhance model performance. First, I remove
+specific columns from the dataset `pamplona`, variables that either
+provide redundant information or are not essential for the analysis,
+reducing dimensionality. Then, i rename columns aiming to improve
+clarity and readability, making it easier to interpret results.
 
 ```{r}
 pamplona <- pamplona |> 
@@ -291,25 +429,65 @@ pamplona <- pamplona |>
                    "registro",
                    "p1",
                    "zona",
-                   "p3_cod",
+                   "p3_cod", # esto es rango de edad, a lo mejor me interesa.
                    "p4",
                    "p4_otros")) |> 
   dplyr::rename(barrio = p1a,
                 gender = p2,
                 age = p3,
-                nationality = np4,
                 employment = p20,
                 education = p21,
                 income = p22)
 
 ```
 
--   Convertir las variables a factores, ordinales y numéricas según
-    corresponda
+Then I convert each variable to its appropriate data type—binary,
+ordinal, categorical, or numeric—based on its nature. We convert binary
+variables to factors, allowing for easier interpretation, categorical
+encoding, and use in models that handle categorical data differently
+from continuous data.
+
+**REVISAR**: First I check the levels of each variable using
+**`as.character(pamplona[[var]])`**, which converts each variable's
+values to characters, ensuring that levels are shown as labels instead
+of factor levels. Then, by using
+**`paste(cat$categories, collapse = ", ")`** I combine categories into a
+comma-separated string for easy reading. This will output each variable
+name followed by its categories in a more readable, line-by-line format,
+like this:
+
+```{r}
+# Get unique categories for each variable in pamplona
+categories <- lapply(names(pamplona), function(var) {
+  unique_values <- unique(as.character(pamplona[[var]]))
+  list(variable = var, 
+       categories = unique_values)
+})
+
+# Display the results in a cleaner format
+for (cat in categories) {
+  cat("\nVariable:", cat$variable, "\nCategories:", paste(cat$categories, collapse = ", "), "\n")
+}
+
+```
+
+**REVISAR**: Binary variables represent categories with only two
+options. Ordinal variables capture data on a ranked scale, and by
+converting them to ordered factors, I retain their hierarchical nature,
+which helps statistical methods recognize that certain values represent
+higher or lower positions in an ordered sequence. Categorical variables
+have distinct categories with no inherent ordering, and I convert these
+to nominal factors, ensuring that each category is treated as unique
+without implying a sequence. Variables representing quantities are
+converted to numeric type to enable accurate quantitative analysis.
+Numeric representation allows these variables to participate in
+arithmetic operations, summaries, and models that require continuous
+data.
 
 ```{r}
 # Binary variables
 binary_vars <- c("gender", 
+                 "nationality",
                  "p5_1", "p5_2", "p5_3", 
                  "p5_4", "p5_5", "p5_6", 
                  "p5_7", "p5_8",
@@ -321,7 +499,7 @@ binary_vars <- c("gender",
 pamplona[binary_vars] <- lapply(pamplona[binary_vars], 
                                 as.factor)
 
-# Variables ordinales (trabajando con números)
+# Ordinal variables (trabajando con números)
 ordinal_vars <- c("p7_1", "p7_2", "p7_3", 
                   "p7_4", "p7_5", "p7_6", 
                   "p7_7", "p7_8", 
@@ -338,9 +516,8 @@ pamplona[ordinal_vars] <- lapply(pamplona[ordinal_vars],
                                  function(x) factor(x, 
                                                     ordered = TRUE))
 
-# Resto de variables categóricas
-categorical_vars <- c("barrio", 
-                      "nationality",
+# Categorical variables
+categorical_vars <- c("barrio",
                       "p13a", "p13b",
                       "p18", 
                       "employment")
@@ -348,7 +525,7 @@ categorical_vars <- c("barrio",
 pamplona[categorical_vars] <- lapply(pamplona[categorical_vars], 
                                      as.factor)
 
-# Variables numéricas
+# Numeric variables
 numeric_vars <- c("age",
                   "p11_1", "p11_2",
                   "p14")
@@ -359,6 +536,30 @@ pamplona[numeric_vars] <- lapply(pamplona[numeric_vars],
 ```
 
 ## Missing values
+
+To assess the completeness and reliability of the dataset, we began by
+calculating the percentage of missing values for each variable. High
+levels of missing data can undermine the integrity of any statistical
+analysis, as they may introduce bias or diminish the power of
+inferential results. Thus, assessing missingness is a critical first
+step toward understanding which variables may be robust enough for
+reliable analysis.
+
+Setting a threshold of 40% for missing values is a deliberate decision
+grounded in both statistical and practical considerations. Retaining
+variables with excessive missingness could skew insights or complicate
+downstream methods like imputation, which becomes increasingly
+challenging as missingness grows. The 40% threshold represents a balance
+between maximizing available data and ensuring that variables included
+in the analysis offer a meaningful representation of the underlying
+population. This cutoff is chosen to mitigate potential biases that
+high-missingness variables could introduce, ensuring a solid foundation
+for subsequent analyses.
+
+By preemptively removing variables that exceed this threshold, we are
+upholding analytical rigor and setting a baseline for data quality,
+thereby reducing the likelihood of distorted or misleading results due
+to poor data coverage.
 
 ```{r}
 # See % of missing values per variable
@@ -372,52 +573,191 @@ pamplona <- pamplona |>
 
 ```
 
--   Cart without cross validation (just one variable)
+### Cart without cross validation (just one variable)
+
+To address missing values, I carefully considered the structure of the
+dataset, which includes binary, ordinal, categorical (with multiple
+categories), and discrete numerical variables. Imputation with a mix of
+variable types poses a unique challenge, as different imputation methods
+are typically better suited to specific variable types, and attempting
+to apply multiple methods simultaneously often resulted in errors. Many
+imputation methods require homogeneity in variable types to avoid
+incompatibility issues during processing.
+
+I initially aimed to test at least two imputation methods for each type
+of variable to compare their performance. However, due to the variable
+diversity and associated errors, I ultimately opted for the CART
+(Classification and Regression Trees) method, implemented via the `mice`
+package, which can handle all variable types simultaneously. CART’s
+flexibility with categorical, ordinal, and numeric data simplifies the
+process without requiring separate treatment for each variable type,
+allowing me to sidestep the errors caused by mixing methods.
+
+To validate this choice, given the lack of direct comparison across
+different methods, I applied CART on one representative variable of each
+type (one categorical and one numeric). Using cross-validation, I
+compared the resulting distribution against the original distribution to
+assess the imputation quality. This preliminary step provided a
+safeguard by visually confirming that the imputed values closely matched
+the original distribution’s shape, an essential validation in the
+absence of alternative imputation methods.
+
+After establishing CART as a robust imputation approach for individual
+variables, I applied it to the entire dataset. Although cross-validation
+was not feasible at this scale, the preliminary validation on single
+variables gave confidence that CART would perform similarly across the
+full dataset. This approach maintains consistency in handling missing
+values across variable types, ensuring that the dataset remains
+representative of the underlying population without introducing biases
+or distortions due to incompatible imputation techniques.
+
+First, we isolate categorical variables in `pamplona` by excluding
+numeric columns. This step is crucial for later imputing missing values
+in these. Next, I use multiple imputation on `vars_cat`, focusing on the
+categorical variables `p18` and `p6_3`. The we do the same with the
+numerical variables and choose age for the multiple imputation. We use
+the `mice` package, which leverages "multiple imputations by chained
+equations," appropriate for handling missing data systematically across
+variables. Setting `m = 2` creates two imputed datasets, and a fixed
+seed enhances reproducibility.
 
 ```{r}
-vars_cat <- pamplona |> 
-  dplyr::select(-c(is.numeric))
+# Select categorical variables (non-numeric) for imputation
+vars_cat <- pamplona |> dplyr::select(-c(where(is.numeric)))
 
-# cambiar lo de vars with na
-mice_imputed <- data.frame(
+# Impute missing values for categorical variable 'p18' using CART method
+mice_imputed_p18 <- data.frame(
+  original = vars_cat$p18,
+  imputed_cart = complete(mice(vars_cat, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$p18)
+
+# Impute missing values for dichotomous variable 'p6_3' using CART method
+mice_imputed_p6_3 <- data.frame(
   original = vars_cat$p6_3,
   imputed_cart = complete(mice(vars_cat, 
                                m = 2, 
                                method = "cart", 
                                seed = 123))$p6_3)
 
-# Imputation methods: plotting resuls 
-variables <- c("original", 
-               "imputed_cart")
-titles <- c("Original distribution", 
-            "Cart-imputed distribution")
-colors_fill <- c("skyblue", 
-                 "#15ad4f")
-colors_border <- c("skyblue3", 
-                   "#808080")
+# Select numeric variables for imputation
+vars_num <- pamplona |> dplyr::select(where(is.numeric))
 
-# Initialize an empty plot list for the new plots
+# Impute missing values for numeric variable 'age' using CART method
+mice_imputed_age <- data.frame(
+  original = vars_num$age,
+  imputed_cart = complete(mice(vars_num, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$age)
+
+# List of imputed data frames for each variable
+imputed_data <- list(p18 = mice_imputed_p18,
+                     p6_3 = mice_imputed_p6_3,
+                     age = mice_imputed_age)
+
+```
+
+The following visualization step compares the distributions of the
+original and imputed values for each variable. By plotting, I aim to
+visually assess whether the CART imputation accurately reflects the
+original distribution’s shape and variability, helping validate the
+imputed results. This visual side-by-side layout provides an intuitive
+sense of how closely the imputed data aligns with the original, a step
+essential in determining whether the imputation effectively preserves
+the distributional properties of the original dataset. This comparison
+serves as a validation step, ensuring that the imputed values are not
+introducing systematic distortions or biases.
+
+**coment the results of the plots**
+
+```{r}
+# Define parameters for visual comparison of original vs. imputed data
+variables <- c("original", "imputed_cart")
+titles <- c("Original distribution", "Cart-imputed distribution")
+colors_fill <- c("skyblue", "#15ad4f")
+colors_border <- c("skyblue3", "#808080")
+
+# Initialize an empty plot list
 plots <- list()
 
-# Loop through the updated variables to create plots
-for (i in 1:length(variables)) {
-  plots[[i]] <- ggplot(mice_imputed, 
-                       aes(x = .data[[variables[i]]])) +
-    geom_bar(fill = colors_fill[i], 
-             color = colors_border[i], 
-             position = "identity") +
-    ggtitle(titles[i]) +
-    theme_classic()
+# Loop through each variable and create the original and imputed plots
+for (var_name in names(imputed_data)) {
+  for (i in 1:2) {
+    plot <- ggplot(imputed_data[[var_name]], 
+                   aes(x = .data[[variables[i]]])) +
+      geom_bar(fill = colors_fill[i], 
+               color = colors_border[i],
+               position = "identity") +
+      ggtitle(paste(var_name, "-", titles[i])) +
+      theme_classic()
+    plots <- c(plots, list(plot))
+  }
 }
 
-# Combine the new set of plots into a grid
+# Combine all six plots into a grid
 plot_grid(plotlist = plots, 
-          nrow = 2, 
+          nrow = 3, 
           ncol = 2)
 
 ```
 
-### Cross validation
+### Validating CART with cross-validation
+
+To rigorously validate the imputation quality in this analysis, I
+implemented cross-validation specifically for the `mice` imputation
+process. Cross-validation is an essential tool in evaluating imputation
+methods, allowing me to observe how well the imputed values align with
+actual values in a controlled manner. By partitioning the data into
+training and test sets, cross-validation enables testing of imputed
+values against withheld data, providing an evidence-based assessment of
+imputation accuracy and robustness.
+
+The function `cv_mice` takes the dataset, imputation method, and other
+parameters to apply a k-fold cross-validation process. Here, I use a
+5-fold cross-validation (`n_folds = 5`) for a balanced approach that
+provides sufficient variability without over-splitting the data. Each
+fold serves as a test set in one iteration, while the remaining data
+acts as a training set for imputation. By setting a seed (`seed = 123`),
+I ensure that the fold splits are reproducible, maintaining consistency
+in the evaluation.
+
+Inside each fold iteration, I perform the following steps:
+
+1.  **Data Splitting**: I partition the data into training
+    (`train_data`) and test (`test_data`) sets based on the fold
+    structure. Excluding the test set during imputation ensures that I
+    can evaluate how well the method generalizes to unseen data, an
+    essential aspect of imputation validation.
+
+2.  **Imputation on Training Data**: I apply `mice` to the training data
+    only, using the specified `method` (in this case, "cart"). Here, I
+    impute two versions of the data (`m = 2`), then select the first
+    imputed dataset (`complete(imputed_train, 1)`) as the final training
+    set for evaluation. Limiting to a single completed dataset keeps the
+    process manageable while allowing multiple imputations to inform the
+    model.
+
+3.  **Result Storage**: Each fold iteration outputs a list containing
+    the fully imputed training data (`complete_train`) and the unaltered
+    test data (`test_data`). This format provides the necessary data for
+    comparing imputed and actual values in the test set without
+    contaminating the test data with imputation artifacts, thereby
+    preserving the validity of the evaluation.
+
+After creating this cross-validation setup, I apply the function to the
+dataset `pamplona` using the `cart` method (`method = "cart"`). The
+result is a list of imputed and test datasets across the folds, which
+provides a comprehensive foundation for assessing the imputation quality
+of CART across different data segments.
+
+In summary, this cross-validation approach helps ensure that the CART
+method is rigorously evaluated across various data splits. By
+systematically assessing imputation on independent subsets, I can
+ascertain the stability and generalizability of the method, thus
+strengthening the statistical reliability of the entire imputation
+process.
 
 ```{r}
 # Function for cross-validation using MICE
@@ -450,9 +790,48 @@ cv_results_cart <- cv_mice(pamplona,
 
 ```
 
-In order to compare the resulting distributions...
+After completing cross-validation on the imputed data, in order to
+compare the resulting distributions...
 
-1.  Extract imputed values across folds and compare them:
+1.  **Assess the consistency and reliability of the imputed values by
+    comparing their distributions across the various folds.**
+
+Since each fold in the cross-validation process represents a different
+subset of the data, this approach provides insight into how consistently
+CART performs under varying data conditions. A robust imputation method
+should yield similar distributions across folds, suggesting that the
+method generalizes well and is less sensitive to specific data
+partitions.
+
+The imputed datasets from each fold, stored in `cv_results_cart`, are
+accessed with `lapply`, extracting the training data (`res$train`) for
+each fold. This extraction isolates the fully imputed datasets, ensuring
+that only the imputed training sets are compared, as the test data
+remains unaltered to maintain the integrity of cross-validation. By
+focusing on the training datasets, I am directly evaluating the
+consistency of the imputation process itself, rather than its
+interaction with withheld data.
+
+Once the imputed datasets for each fold are extracted, I merge them into
+a single dataset (`combined_imputed_data`) using `do.call(rbind, ...)`.
+This combined dataset facilitates a unified analysis, allowing for a
+direct comparison of the distributions of imputed values across folds.
+By combining the data, I can leverage standard distributional checks
+(e.g., density plots, boxplots) or statistical tests to quantitatively
+and visually assess the consistency of imputed values.
+
+The logic behind combining imputed values from each fold lies in
+assessing the imputation method’s stability across different training
+sets. If CART produces similar distributions across folds, it implies
+that the method captures the underlying patterns of the missing data
+effectively, regardless of data partitioning. Conversely, large
+variations might indicate sensitivity to specific data subsets,
+suggesting potential instability or limitations of the method.
+
+By organizing the imputed values this way, I set a strong foundation for
+statistically validating the imputation method's performance, thus
+ensuring that the chosen approach is both reliable and reproducible
+across different data segments.
 
 ```{r}
 # Extract imputed values from each fold
@@ -466,38 +845,86 @@ combined_imputed_data <- do.call(rbind,
 
 ```
 
-2.  Calculate Variability Across Imputed Values
+2.  **Calculate Variability Across Imputed Values**
 
-2.1. For numeric variables: calculate statistics like the mean, standard
-deviation, and other relevant metrics for each variable to see how
-consistent the imputed values are across different folds.
+Assessing variability is essential because it provides insight into how
+stable the imputed values are under varying data conditions. To
+rigorously evaluate the consistency of the imputed values across folds,
+I employ different metrics tailored to numeric and categorical
+variables. For a robust imputation method, we expect minimal variability
+across folds, suggesting that the imputed values are not overly
+influenced by the data partitioning in cross-validation.
+
+For **numeric variables** the consistency of imputed values across folds
+is evaluated by calculating summary statistics, specifically the mean
+and standard deviation, which help to identify if imputed values exhibit
+stability across folds.
+
+The function `analyze_variability` targets a specific variable
+(`variable_name`) in `combined_imputed_data`, which contains all imputed
+values across folds. The mean (`mean_value`) and standard deviation
+(`sd_value`) are computed for the selected variable, ignoring missing
+values with `na.rm = TRUE`. The mean provides an average imputed value,
+while the standard deviation quantifies the spread, indicating how much
+the imputed values fluctuate across folds. Consistent imputation would
+yield a small standard deviation, implying that the imputed values
+converge around a stable mean across different folds.
+
+Then, we compare the mean and standard deviation of `age` in the
+original and imputed datasets. If the imputed values are close to the
+original statistics, it suggests that the imputation method has
+maintained the underlying distribution characteristics effectively.
+Discrepancies might indicate that the imputed values deviate from the
+original distribution, which could point to potential issues with the
+imputation method for this particular variable. **CORREGIR**
 
 ```{r}
 # Analyzing variability for a specific variable
-analyze_variability <- function(imputed_data, variable_name) {
-  # Extract the specific variable across all imputed datasets
-  imputed_values <- combined_imputed_data[[variable_name]]
+analyze_variability <- function(original_data, imputed_data, variable_name) {
+  # Extract the specific variable in both original and imputed datasets
+  original_values <- original_data[[variable_name]]
+  imputed_values <- imputed_data[[variable_name]]
   
-  # Calculate mean and standard deviation across folds
-  mean_value <- mean(imputed_values, 
-                     na.rm = TRUE)
-  sd_value <- sd(imputed_values, 
-                 na.rm = TRUE)
+  # Calculate mean and standard deviation for original data
+  original_mean <- mean(original_values, 
+                        na.rm = TRUE)
+  original_sd <- sd(original_values, 
+                    na.rm = TRUE)
   
-  list(mean = mean_value, 
-       sd = sd_value)
+  # Calculate mean and standard deviation for imputed data
+  imputed_mean <- mean(imputed_values, 
+                       na.rm = TRUE)
+  imputed_sd <- sd(imputed_values, 
+                   na.rm = TRUE)
+  
+  # Return both original and imputed statistics for comparison
+  list(original = list(mean = original_mean, 
+                       sd = original_sd),
+       imputed = list(mean = imputed_mean, 
+                      sd = imputed_sd))
 }
 
 # Analyzing variability for the "age" variable as an example
-variability_age <- analyze_variability(combined_imputed_data, 
-                                       "age")
+variability_age <- analyze_variability(pamplona, 
+                                       combined_imputed_data, "age")
 print(variability_age)
 
 ```
 
-2.2. Analyzing variability for categorical variables: frequency tables
-and visualizations like bar plots to analyze the consistency and
-variability of the imputed values.
+For **categorical variables**, variability is assessed by examining
+frequency distributions. In `compare_frequency_distributions`, I
+generate normalized frequency tables (proportions) for both the original
+and imputed data for each category of `variable_name`. This
+normalization facilitates direct comparison by ensuring that both
+distributions are on the same scale, regardless of the absolute number
+of observations. Then, by comparing the proportions, I can visually and
+numerically assess how closely the imputed distributions align with the
+original ones. For instance, if variable "p18" exhibits similar
+distributions in both original and imputed data, it suggests that CART
+is effectively capturing and replicating the original distribution
+patterns. Discrepancies, however, could indicate that the imputation
+method introduces bias, potentially signaling a need for a different
+method or further refinement.
 
 ```{r}
 # Function to calculate and compare frequency distributions
@@ -524,10 +951,26 @@ print(freq_distributions_p18)
 
 ```
 
-3.  Visualize Distribution of Imputed Values to see if there are any
-    significant differences across folds.
+3.  **Visualize Distribution of Imputed Values to see if there are any
+    significant differences across folds.**
 
-3.1. Numeric variables
+To thoroughly assess the quality of the imputed values, I visualize the
+normalized distributions for both numeric and categorical variables,
+comparing these distributions within the imputed dataset and against the
+original data. By doing this, I get to detect any significant deviations
+or inconsistencies, which helps validate the imputation method’s
+effectiveness in preserving the original data's characteristics. This
+visualization step serves as a diagnostic tool: if the imputed values
+closely match the original distribution, it suggests that the method
+effectively preserves the statistical characteristics of the data.
+
+For **numeric variables**, the function
+`plot_imputed_distribution_normalized` takes the imputed dataset
+(`imputed_data`) and a specified variable (`variable_name`) and plots
+its density-normalized distribution using a histogram. By normalizing to
+density (`..density..`), I focus on the distribution shape rather than
+the frequency, allowing a clear comparison of spread and central
+tendency across imputed values.
 
 ```{r}
 # Visualize normalized distribution of imputed values for a specific variable
@@ -549,7 +992,17 @@ plot_imputed_distribution_normalized <- function(imputed_data, variable_name) {
 plot_imputed_distribution_normalized(combined_imputed_data, 
                                      "age")
 
+write.csv(pamplonaf, file = "pamplonaf.csv", row.names = FALSE)
+
 ```
+
+I use `compare_original_imputed_normalized` to plot overlapping
+histograms for the original and imputed datasets, so I can evaluate
+whether the imputed values accurately reflect the original data.
+Normalizing both distributions ensures that differences in sample sizes
+do not skew the comparison, providing a visual representation of how
+closely the imputed values replicate the original data distribution.
+**COMENTAR**
 
 ```{r}
 # Compare original vs imputed data for a variable with normalized values
@@ -559,11 +1012,13 @@ compare_original_imputed_normalized <- function(original_data, imputed_data, var
   
   # Plot comparison using density for normalization
   ggplot() +
-    geom_histogram(aes(x = original_values, y = ..density..), 
+    geom_histogram(aes(x = original_values, 
+                       y = ..density..), 
                    fill = "skyblue", 
                    alpha = 0.5, 
                    binwidth = 1) +
-    geom_histogram(aes(x = imputed_values, y = ..density..), 
+    geom_histogram(aes(x = imputed_values, 
+                       y = ..density..), 
                    fill = "orange", 
                    alpha = 0.5, 
                    binwidth = 1) +
@@ -581,7 +1036,17 @@ compare_original_imputed_normalized(pamplona,
 
 ```
 
-3.2. Categorical variable
+For **categorical variables**, as they lack numerical spread, I compare
+proportional frequency distributions. The function
+`plot_categorical_distribution_normalized` calculates the normalized
+frequency (proportion) of each category in both the original and imputed
+datasets, converting these counts to proportions and allowing for direct
+comparison, removing any bias from different sample sizes. The bar plot
+then overlays the proportions of categories in both the original and
+imputed datasets, facilitating a side-by-side comparison. If the imputed
+distribution mirrors the original, this indicates that the method has
+effectively preserved category distributions, minimizing the risk of
+imputation bias. **COMENTAR**
 
 ```{r}
 # Normalize the frequency counts to proportions
@@ -628,7 +1093,23 @@ plot_categorical_distribution_normalized(pamplona,
 
 ```
 
-4.  Imputation without Cross-Validation
+4.  **Imputation of missing values with CART**
+
+Cross-validation helped validate that the CART method effectively
+preserved the original distribution’s characteristics, both for numeric
+and categorical variables. Given this initial validation, I now apply
+CART imputation to the full dataset, treating the missing values
+directly and creating a complete, imputed dataset. By imputing on the
+entire dataset at once and not using cross-validation for it, I
+streamline the process, reducing computational demands and ensuring
+consistency across all data points. **REVISAR**
+
+The `mice` function applies CART-based imputation across all variables
+in the dataset with missing values. Specifying `m = 2` creates two
+imputed versions, while `complete(imputed_data, 1)` extracts one of
+these versions as the final complete dataset (`pamplonaf`). The
+`seed = 123` ensures reproducibility, so the imputed values remain
+consistent across runs.
 
 ```{r}
 # Imputing based on cart
@@ -639,13 +1120,41 @@ pamplonaf <- complete(mice(pamplona,
 
 ```
 
-quería intentar la imputación con cross validation pero no sabía cómo
-manejar las 4095 observaciones resultantes (los dos códigos que intenté
-están en Thesis.rmd)
-
 # Exploratory analysis
 
 ## Descriptive analysis / univariate
+
+Univariate descriptive analysis is essential as a first approach before
+any type of modeling, as it provides foundational insights by
+summarizing each variable independently, allowing us to examine the
+distribution, central tendency, and spread of each variable. This
+analysis is conducted separately for all variables in the dataset, and
+is structured to generate statistical summaries and visualizations for
+both numerical and categorical variables.
+
+I defined a function, `univariate analysis`, to automate this process,
+adapting to both numeric and categorical variables, with tailored
+summaries and visualizations for each type:
+
+1.  **Numeric variables**: a summary of descriptive statistics is
+    provided, including measures of central tendency and dispersion,
+    such as mean, median, and range. For the visualization, the function
+    uses a histrogram and adjusts its bin width based on the variable,
+    aiming to improve readability. For `age`, a custom bin width of 5 is
+    used to represent age groups clearly. For other variables, the bin
+    width is determined dynamically, with narrower bins for variables
+    with fewer unique values.
+
+2.  **Categorical Variables**: a frequency table is generated, showing
+    the count of each category within the variable, providing insights
+    into the distribution of categories and identifies dominant or less
+    common responses. For the visualization, a bar plot is created to
+    visualize category counts and help to identify any potential skew in
+    categorical responses.
+
+If a variable type is unrecognized, the function displays a message,
+ensuring that all potential issues with variable types are flagged
+without interrupting the analysis.
 
 ```{r}
 # Function to generate univariate analysis
@@ -667,9 +1176,13 @@ univariate_analysis <- function(data) {
       
       # Plot histogram
       p <- ggplot(data, aes_string(x = col)) +
-        geom_histogram(binwidth = bin_width, fill = "blue", color = "black") +
+        geom_histogram(binwidth = bin_width, 
+                       fill = "blue", 
+                       color = "black") +
         theme_minimal() +
-        labs(title = paste("Histogram of", col), x = col, y = "Frequency")
+        labs(title = paste("Histogram of", col), 
+             x = col, 
+             y = "Frequency")
       print(p)
       
     } else if (is.factor(data[[col]]) || is.character(data[[col]])) {
@@ -684,7 +1197,9 @@ univariate_analysis <- function(data) {
       p <- ggplot(data, aes_string(x = col)) +
         geom_bar(fill = "blue") +
         theme_minimal() +
-        labs(title = paste("Bar Plot of", col), x = col, y = "Count")
+        labs(title = paste("Bar Plot of", col), 
+             x = col, 
+             y = "Count")
       print(p)
       
     } else {
@@ -694,12 +1209,33 @@ univariate_analysis <- function(data) {
   }
 }
 
-# Call the function
-univariate_analysis(pamplonaf)
-
 ```
 
--   Variables related to the *criminality index*.
+Instead of applying the function to the whole dataset at the same time,
+specific subsets of variables are analyzed to focus on particular themes
+within the dataset, namely criminality, perception, self-protection
+strategies, and the rest of the variables. This allows for an organized
+examination of conceptually related variables
+
+### Criminality index variables
+
+The variables in `crime_vars` capture respondents’ views or experiences
+related to crime, such as awareness of crime types and victimization
+experiences.
+
+The responses are structured as binary outcomes (1 = "Yes" and 2 =
+"No"). The three most frequent crimes are Conflicts within their
+neighborhood or residential community (p16), Fraud (p5_8) and Personal
+theft without threats or violence (p5_1). Consequently, there is a low
+incidence of violent crime (reported instances of violent crime, such as
+muggings, physical assaults, and sexual assaults, are rare, which may
+suggest a relatively safe urban environment), a higher incidence of
+non-violent and indirect crime (non-violent crimes, especially fraud,
+neighborhood conflicts and theft) and a potential for underreporting
+(certain crimes, particularly sexual assault, may be underreported in
+surveys due to stigma or privacy concerns) **MIRAR ESTO DEL
+UNDERREPORTING WHEN TALKING ABOUT THIS AND ASSESSING THE PAMPLONA
+DATA**.
 
 ```{r}
 crime_vars <- pamplonaf[, c("p5_1", "p5_2", "p5_3", 
@@ -712,15 +1248,103 @@ univariate_analysis(crime_vars)
 
 ```
 
--   *Perception index*
+### Perception index variables
+
+`perception_vars` includes variables reflecting safety urban
+perceptions, related to residents' feelings of safety in various
+contexts, their perception of community degradation, and their views on
+police services. Some of the conclusion we can extract from this
+analysis are:
+
+-   **High sense of safety in private and familiar spaces**: most
+    residents feel safe at home and in familiar areas, while isolated or
+    nightlife areas induce higher alertness.
+
+-   **Mixed perceptions of safety in public spaces**: public facilities
+    and transportation are viewed as generally safe, though perceptions
+    vary for commercial zones and around public drinking groups.
+
+    -   While 90% feel safe in public facilities like libraries and
+        sports centers, **69** are on alert, and **4** feel in danger.
+        75% of respondents feel safe in commercial areas **(p7_3)**,
+        while 23.5% feel on alert or in danger.
+
+    -   Both neighborhood and city are considered safe by respondents.
+        With a mean of 7.615 and a median of 8, residents generally rate
+        neighborhood safety positively. The mean safety rating for the
+        city is 7.49. The minor difference may indicate that residents
+        view their immediate surroundings as somewhat safer than the
+        city as a whole, a common finding in urban studies. **REVISAR
+        ESTOS STUDIES.**
+
+    -   Most respondents (87%) feel safe using public transportation,
+        with **108** (13%) on alert and only **3** in danger (p7_6).
+        This strong sense of safety is positive, as public transit is
+        essential for mobility, particularly for those without private
+        transportation.
+
+    -   61% of the respondents feel in danger in isolated streets or
+        parks (p7_4), while only 39% feel safe. This distribution
+        reflects a significant perception of vulnerability, as isolated
+        locations often lack the natural surveillance that more
+        populated areas provide, contributing to heightened alertness.
+
+    -   Only **348** (42%) feel safe, while **426** (51%) are on alert
+        and **54** (7%) feel in danger when seeing groups engaging in
+        public drinking. This pattern indicates a perception that public
+        drinking gatherings may lead to disorderly behavior, causing
+        discomfort for many residents.
+
+-   Regarding personal safety walking at night in the city, 31% of the
+    sample strongly agree they feel safe walking alone at night, while
+    **94** strongly disagree. On the other hand, 36% of people feel
+    completely safe in their neighborhood at night, a slight increase
+    compared to the city. The increased comfort in neighborhood settings
+    suggests that proximity and familiarity foster a stronger sense of
+    security, although not universally.
+
+-   In nightlife zones, 51% of the sample feel safe, 48% feel on alert
+    or in danger (p7_5). Nightlife areas can be associated with public
+    disorder, intoxicated individuals, or other risk factors, explaining
+    why nearly half of respondents feel cautious or unsafe.
+
+-   Regarding perception of neighborhood degradation and crime (p12),
+    the opinions are almost equally distributed: 44% of the sample
+    believe their neighborhood is not degraded or crime-ridden, while
+    47% perceive some level of degradation. The perception of
+    degradation is crucial as it can influence residents’ sense of
+    safety.
+
+-   **Positive Views of Police Services with Room for Improvement**:
+    overall satisfaction (7.114/10) with police services. However, the
+    range of responses points suggests that while many residents are
+    content with police services, there is a noticeable minority with
+    critical views, possibly due to isolated negative experiences or
+    differing expectations of police effectiveness. REVISAR
+
+    -   Seeing a police presence evokes safety for **732** respondents
+        (89%), but **85** are on alert and **11** feel in danger. While
+        a majority feel reassured, the presence of alertness and fear
+        for some may stem from distrust in police or personal history
+        with law enforcement. REVISAR.
+
+-   **Low desire to relocate due to crime**: only a 5% of the sample
+    have considered moving due to fear of victimization in their
+    neighborhood, while **784 respondents** have not.
+
+Overall, the Pamplona dataset suggests a generally positive perception
+of safety but highlights specific contexts—such as isolated spaces,
+nightlife areas, and interactions with large public gatherings—where
+targeted interventions could further enhance residents’ sense of
+security.
 
 ```{r}
 perception_vars <- pamplonaf[, c("p7_1", "p7_2", "p7_3", 
                             "p7_4", "p7_5", "p7_6",
-                            "p7_7", "p7_8",
+                            "p7_7", "p7_8", # a lo mejor quitar p77 porque habla de la presencia de coches de policía, algo que no vamos a poder usar en la simulación
                             "p9", 
                             "p10_1", "p10_2", 
-                            "p10_4", "p10_5", "p10_6", 
+                            "p10_4", "p10_5", 
                             "p11_1", "p11_2", 
                             "p12", 
                             "p14")]
@@ -729,7 +1353,39 @@ univariate_analysis(perception_vars)
 
 ```
 
--   those related to *self-protection strategies*
+### Self-protection strategies variables
+
+Variables within `protection_vars` reflect the self-protection measures
+respondents take, either in response to perceived risks or as
+precautionary behavior.
+
+-   **Installation of Security Systems in the Home (p8)**: 12% of
+    respondents reported installing some type of alarm or additional
+    security system in their homes due to fear of victimization, while
+    the majority (88%) have not taken such measures. This relatively low
+    rate of security installations suggests that while crime concerns
+    are present, they may not be perceived as urgent enough to warrant
+    costly investments for most residents. Those who do install security
+    systems may have heightened anxiety about crime or reside in areas
+    perceived as higher risk.
+
+-   **Consideration of Relocation Due to Crime Concerns (p9)**. Only 44
+    respondents (5%) have considered moving because of crime fears in
+    their neighborhood, while 95% have not. The low rate of relocation
+    considerations highlights that, for most residents, fear of crime
+    has not reached a level that disrupts their sense of stability or
+    attachment to place.
+
+-   **Avoidance of Certain City Areas Due to Crime Fear (p10_3)**. 61%
+    agree with avoiding certain areas. 39% strongly disagree with this
+    statement. **REVISAR**: *avoidance behavior can be protective, yet
+    it also reflects an underlying sense of insecurity in certain urban
+    spaces, which may disrupt residents’ freedom of movement and access
+    to city resources*.
+
+-   **Avoidance of Nightlife Due to Crime Fear (p10_7)**. 88% agree that
+    they avoid going out at night due to fear of crime. In 15% disagree
+    with this statement.
 
 ```{r}
 protections_vars <- pamplonaf[, c("p8",
@@ -738,6 +1394,95 @@ protections_vars <- pamplonaf[, c("p8",
                                   "p10_7")]
 
 univariate_analysis(protections_vars)
+
+```
+
+### Other variables
+
+`other_vars` include sociodemographic **NOT SOCIODEMOGRAPHIC**
+variables, such as barrio, age, gender, education, income, nationality
+and employment. It also analyzes some other variables.
+
+-   The distribution across neighborhoods shows a fairly even spread,
+    with the largest group of respondents from neighborhood 6, Rochapea,
+    (**113** respondents), and the smallest one being neighborhood 12,
+    *Etxabakoitz (16 respondents)*.
+
+-   Gender is evenly distributed, with **407** men and **421** women
+    participating, allowing for unbiased comparisons between genders.
+
+-   The age range spans from **15 to 95 years**, with a median age of
+    **50**. This wide age distribution reflects a well-rounded
+    demographic.
+
+-   **672** respondents identified as Spanish, while **156** were
+    categorized as “Others”. This majority-Spanish sample enables
+    analysis of crime and safety perceptions within a predominantly
+    local population, while the "Others" category provides a viewpoint
+    for analyzing experiences and perceptions among non-Spanish
+    residents.
+
+-   The largest group of respondents (**403**) is employed, while
+    **223** are retired.
+
+-   Most respondents have higher education, with **190** holding
+    tertiary (university-level) education and **338** having some form
+    of professional training or higher secondary education. **Education
+    level may also correlate with media consumption habits and awareness
+    of public safety initiatives.**
+
+-   Income levels are relatively varied, with the largest group of
+    respondents falling in the **mid-range income brackets** (categories
+    2–5). Lower-income brackets might perceive higher crime risk due to
+    fewer private security options, while higher-income respondents may
+    have more resources to invest in home security.
+
+-   Perceptions of Neighborhood Safety (p13a and p13b)
+
+    -   Neighborhood 4 is perceived as the safest by **251**
+        respondents, followed by neighborhood 1 (**197**), indicating
+        areas where residents feel most secure. These perceptions likely
+        correlate with neighborhood characteristics, such as low crime
+        rates, good infrastructure, or active community presence.
+    -   Neighborhood 5 is deemed the most insecure by **226**
+        respondents, followed by neighborhood 10 (**184**). This
+        perception may reflect issues such as higher crime rates,
+        socio-economic challenges, or lower investment in public
+        infrastructure.
+
+-   Length of Residence in Current Neighborhood (p15). The majority of
+    respondents (**423**, 52%) have lived in their current neighborhood
+    for over 10 years, while **138** (17%) have lived there all their
+    lives. Only **25** (3%) have lived in their neighborhood for one
+    year or less. This distribution indicates strong community ties and
+    stability, which can positively influence perceptions of safety and
+    community cohesion. Long-term residents are more likely to be
+    invested in their neighborhoods and may have a deeper understanding
+    of local safety dynamics.
+
+-   Media Consumption Habits (p18 and p19)
+
+    -   Digital media is the most popular news source, with **263**
+        respondents using online platforms, followed by social media
+        (**199**) and print newspapers (**111**).
+    -   The majority of respondents access news **once per day**
+        (**285**), with **178** consuming news continuously. Frequent
+        news consumption may influence perceptions of safety, as
+        increased exposure to crime reports or community issues can
+        heighten awareness or concerns.
+
+```{r}
+# Create a list of all variables to exclude
+exclude_vars <- c(names(protections_vars), 
+                  names(crime_vars), 
+                  names(perception_vars))
+
+# Select all other variables not in the exclusion list
+other_vars <- pamplonaf |> 
+  dplyr::select(-all_of(exclude_vars))
+
+univariate_analysis(other_vars)
+  # p15 cuanto hace que vive en su barrio podría relacionarse con la sensacion de seguridad.
 
 ```
 
@@ -948,6 +1693,69 @@ for (result_set in results_list) {
 ```
 
 # UNSUPERVISED MACHINE LEARNING
+
+```{r}
+perception_vars <- pamplonaf |>  dplyr::select("p7_1", "p7_2", "p7_3", 
+                            "p7_4", "p7_5", "p7_6",
+                            # "p7_7", habla de la presencia de coches de policía, algo que no vamos a poder usar en la simulación
+                            "p7_8", 
+                            # "p9", 
+                            "p10_1", "p10_2", "p10_3", "p10_7",
+                           # "p10_4", "p10_5", 
+                            "p11_1", "p11_2", # p11_1 depende de los datos q consiga
+                             "p12"
+                            #"p14"
+                           )
+
+```
+
+princals, pero no con toda la base de datos sino con las
+perception_vars. así obtenemos cada componente principal que explica un
+tipo de percepcion de la inseguridad
+
+lo suyo es crear uno o dos índice de percepción que aglutine las demás
+variables de percepción para simplificar las cosas. pero no me acuerdo
+cuál es la lógica? por qué hago eso? cómo lo voy a usar? cómo lo creo?
+
+```{r}
+# install.packages("Gifi")
+library(Gifi)
+ 
+# algo de que si no sirve usar Kernel PCA (lol) 
+
+fitord <- princals(perception_vars, ordinal = T)  ## default is ordinal=TRUE
+summary(fitord)
+# Ver las cargas de los componentes
+fitord$loadings
+
+
+?princals
+
+fitord <- princals(prinpam, ordinal = FALSE, nComp = 5)  ## Try increasing ncomp
+summary(fitord)
+
+plot(fitord, plot.type = "transplot") ##no funciona
+
+round(fitord$loadings,3)
+plot(fitord, "loadplot", main = "Loadings Plot ABC Data")  ## aspect ratio = 1
+
+plot(fitord, "biplot", 
+     main = "Biplot ABC Data")
+plot(fitord, "screeplot")
+
+perception_vars[115,]
+
+(t.actual <- table(perception_vars$global_security, perception_vars$p9))
+t.global_security <- table(perception_vars[,"global_security"])
+t.p9 <- table(perception_vars[,"p9"])
+(t.expected <- round(outer(t.global_security, t.p9/sum(t.global_security))))
+print(t.actual - t.expected)
+
+```
+
+![](images/Captura%20de%20pantalla%202025-02-13%20a%20las%2016.50.20.png)
+
+![](images/Captura%20de%20pantalla%202025-02-13%20a%20las%2016.54.29.png)
 
 ## Principal Component Analysis (PCA)
 

@@ -18,11 +18,10 @@ perception_vars <- pamplonaf[, c("p7_2", "p7_3",
 univariate_analysis(perception_vars)
 
 ```
-p9 quitar
-p7_1 la quito porque es en la casa. 
+
+p9 quitar p7_1 la quito porque es en la casa.
 
 # PCA
-
 
 Yes, you can convert ordinal factors with numeric levels (like 1, 2, 3, 4) to numeric for the purpose of creating a composite score. The key is to ensure that the ordinal nature is preserved when interpreting the results, but the arithmetic operations like mean can be performed on the numeric representations of these levels.
 
@@ -32,7 +31,7 @@ Convert factors to numeric: Since the factors already represent ordinal categori
 
 Calculate the composite score: Using rowMeans is appropriate, as it will handle the numeric data and give an average score.
 
-### P10_4,5,6 -> cameras
+### P10_4,5,6 -\> cameras
 
 ```{r}
 # Convert factors or characters to numeric
@@ -65,18 +64,16 @@ perception_vars$cam_index <- round(perception_vars$cam_index)
 table(perception_vars$cam_index)
 
 ```
+
 La nueva variable compuesta cam_index tiene un rango de 1 a 4, donde los valores representan la percepción general de las personas sobre las cámaras de seguridad en términos de su adecuación, mejora de seguridad ciudadana y posible invasión de la intimidad. Dado que la escala se deriva de la combinación de varias percepciones, la interpretación de los extremos es la siguiente:
 
 1: Representa una percepción general negativa sobre las cámaras de seguridad. Las personas que obtuvieron esta puntuación tienden a no estar de acuerdo con la instalación de cámaras de seguridad, no creen que mejoren la seguridad ciudadana y/o sienten que invaden su intimidad.
 
 4: Representa una percepción general muy positiva sobre las cámaras de seguridad. Los encuestados con esta puntuación están en gran medida de acuerdo con la instalación de cámaras de seguridad, creen que estas mejoran la seguridad ciudadana y/o no sienten que invadan su intimidad.
 
-1: Percepción muy negativa o preocupación sobre las cámaras de seguridad.
-2: Percepción algo negativa.
-3: Percepción algo positiva.
-4: Percepción muy positiva
+1: Percepción muy negativa o preocupación sobre las cámaras de seguridad. 2: Percepción algo negativa. 3: Percepción algo positiva. 4: Percepción muy positiva
 
-### P10_1,2 -> seg global nocturna
+### P10_1,2 -\> seg global nocturna
 
 ```{r}
 # Combinamos p10_1 y p10_2. antes era seguridad_global_noche
@@ -99,7 +96,7 @@ table(perception_vars$night_security)
 
 ```
 
-### p11_1,2 ->
+### p11_1,2 -\>
 
 ```{r}
 # Suponiendo que las variables se llaman seguridad_barrio y seguridad_ciudad en el dataframe perception_vars
@@ -113,7 +110,6 @@ perception_vars$global_security <- round(perception_vars$global_security)
 table(perception_vars$global_security)
 
 ```
-
 
 ```{r}
 perception_vars <- perception_vars |> 
@@ -135,7 +131,6 @@ perception_vars[factor_columns] <- lapply(perception_vars[factor_columns],
                                           as.factor)
 
 ```
-
 
 ```{r}
 # Load necessary libraries
@@ -184,7 +179,7 @@ df_reduced$dummy_target <- rnorm(nrow(df_reduced))  # Creating a dummy target
 
 # Fit a model to check for VIF
 vif_model <- lm(dummy_target ~ ., data = df_reduced)
-vif(vif_model)
+summary(vif_model)
 
 
 ```
@@ -218,4 +213,3 @@ significant_loadings <- loadings[apply(abs(loadings), 1, max) > threshold, ]
 print(significant_loadings)
 
 ```
-

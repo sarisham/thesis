@@ -36,9 +36,8 @@ Dudas:
 -   Uso de unsupervised machine learning (si) y supervised machine
     learning (no).
 
-```{=html}
 <!-- -->
-```
+
 -   **ÍNDICE DE CRIMINALIDAD OBJETIVA**:
 
     1.  Data imbalance.
@@ -51,7 +50,7 @@ Dudas:
         comentamos para hacerlo más accurate y poder hacer una
         comparativa por zonas de la ciudad, pero no tengo los datos
         oficiales.
-        ![](images/Captura de pantalla 2024-07-29 a las 0.56.51.png){width="539"}
+        ![](images/Captura%20de%20pantalla%202024-07-29%20a%20las%200.56.51.png){width="539"}
 
         Sobre la info que recoge la encuesta, aunque sí pregunta por
         situaciones que se hayan vivido, no pregunta por el barrio en el
@@ -1156,3 +1155,27 @@ summary(pca)
 # FINAL PREDICTIONS
 
 habrá que poner algo de validation y toda la movie
+
+### P7. ESTO NO.
+
+Creo que esto no habria que hacerlo porque de hecho empeora el modelo
+xddd. Así que lo voy a dejar como está, pero dejo el código por si
+acaso. (Recodifica 1 como 1 y 2-3 como 2).
+
+```{r eval=FALSE, include=FALSE}
+# Definir la función de recodificación
+rec <- function(variable) {
+  ifelse(variable == 1, 1, 
+         ifelse(variable %in% 2:3, 2, variable))
+}
+
+# Aplicar la función a las variables de percepción
+perception_vars$p7_1 <- rec(perception_vars$p7_1)
+perception_vars$p7_2 <- rec(perception_vars$p7_2)
+perception_vars$p7_3 <- rec(perception_vars$p7_3)
+perception_vars$p7_4 <- rec(perception_vars$p7_4)
+perception_vars$p7_5 <- rec(perception_vars$p7_5)
+perception_vars$p7_6 <- rec(perception_vars$p7_6)
+perception_vars$p7_8 <- rec(perception_vars$p7_8)
+
+```

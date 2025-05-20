@@ -5,17 +5,8 @@ date: "2024-04-24"
 ---
 
 -   no hay duplicados
--   tendré que hacer esto: #Creating and deleting NA values for those categories that are 8 (N.S.) or 9 (N.C.) x3393$P4[x3393$P4 == 8] \<- NA x3393$P4[x3393$P4 == 9] \<- NA
 
-x3393$ESTUDIOS[x3393$ESTUDIOS == 9] \<- NA
-
-x3393$RELIGION[x3393$RELIGION == 9] \<- NA
-
-x3393$ESCIDEOL[x3393$ESCIDEOL == 98] \<- NA x3393$ESCIDEOL[x3393$ESCIDEOL == 99] \<- NA
-
-x3393 \<- na.omit(x3393)
-
--   should i run some t-tests or anova analysis??
+-   tendré que hacer esto:
 
 ```{r}
 library(tidyverse)  # Conjunto de paquetes para manipulación de datos
