@@ -418,3 +418,100 @@ deberia usar advanced regression: notas del final assignment de advanced modelin
 # Advanced Regression
 
 Advanced regression encompasses a suite of techniques beyond basic linear regression, designed to handle complex, non-linear relationships, interactions among variables, and issues like heteroscedasticity (unequal variance) and multicollinearity (high correlation among predictors). As previously stated, we will be working with numeric variable, 'like', to see participants rating of liking the partner. We delete match as we must ensure the integrity and independence of our predictive features. As stated previously, this two variables may be too related and keeping match can introduce bias about the outcome we aim to predict.
+
+
+## MAS
+
+
+
+
+
+8 marzo, restante:
+
+tutorial gama
+
+revisar la pca y las agrupaciones de safety perception porque no está tan claro como pensaba. hacer la prueba dejando fuera las self defense strategies (y a lo mejor introducirlas de manera externa al PCA en la regresión o, como ponía en las notas de la última tutoría, en las características de los agentes como si fuera una sociodemográfica más). IMPORTANTE revisar esto porque no me acuerdo de si en algo de la bibliografía justificaba que se incluyese/dejase fuera o lo que sea. Me lo he inventado yo en base a la tutoría.
+
+muchas dudas con respecto a las regresiones (en parte porque todavía no me queda claro cuál es mi dependiente?)
+
+Antes de la tutoría:
+
+Terminar tutorial gama (el de predator prey)
+
+hacer las ponderaciones y recuperar la bibliografía que usé para esa idea (para tenerla ubicada y poderla citar en el trabajo, además de por poder seguir tirando del hilo si me hace falta más o cambiar algo).
+
+aplico el midpoint approach pero preguntar a celia si hay algun sitio que diga que las sentencias tienden más a ser x o y.
+
+probar PCA solo safety perception sin las self defense strategies (esas a lo mejor ponerlas en otro aparte o hacerla con sumas como la past victimisation). revisar tb bibliografía porque recuerdo que la safety perception no iba ahi pero no se si lo lei en un paper o fue de las ultimas notas de la tutoria con iñaki.
+
+Mirar ideas de regresiones; cuál hacer, qué variables meter, bibliografía de qué hacen? (que ya la miré y se me ha olvidado todo pero creo que era una logística pero yo no quería una logística porque lo que quería era un índice continuo, que creo que era el de safety perception, así que será una lineal o yo que se, mirar apuntes de alejandro y eso).
+
+Tutoría iñaki:
+
+hablarle de gama (uso de los tutoriales)
+
+mapa
+
+puntos de luz
+
+tipo de barrio o algo así?
+
+Cosas de R:
+
+recordarle: imputación na
+
+explicarle PCA
+
+safety perception y self defense strategies.
+
+explicar cómo lo fui construyendo (probando variables, sacándolas)
+
+resultados de 2 y 3 componentes.
+
+están juntas, pero no recuerdo dónde ni por qué vi que lo mejor sería dejar por un lado las de safety perception y por otro las de self defense. Considerar esto y probar de las dos formas para ver qué sale mejor.
+
+NOTA: aunque no se pueda hacer por barrios por los crímenes, sí que podríamos hacer un índice general para todo pamplona de criminalidad, pero luego hacer el safety perception diferente para cada barrio. por qué sería diferente? aparte de porque varía por barrio, porque podríamos usar self defense strategies de forma diferente en función del barrio que diga cada persona (una persona suele pensar más en lo que conoce cuando se le pregunta por lo que tiene miedo que no. bueno esto me lo acabo de inventar pero si busco literatura seguro que hay algo que diga algo así).
+
+past victimisation no hice PCA sino que una suma (creo) de variables. esto podríamos usarlo para meter los matices por barrio, en función del barrio en el que vive cada persona. se sacaría un índice pero por barrio en vez de por la ciudad entera, aunque el resto de cosas sí que serían por ciudad (por lo menos los crímenes, pero no sé si también el safety perception index, o si una vez hecho cruzarlo con los barrios para sacar las variaciones).
+
+crime index: ponderaciones en función del tipo de crimen y la condena en el codigo penal. revision de literatura para ver cómo lo hacen y uno lo hacía en función de los días mínimos de condena porque en la mayoría de los casos no se da la condena máxima, y tampoco tenía en cuenta agravantes.
+
+queda probar la regresión que no recuerdo cuál era.... creo que es el PCA lo que hay que poner como variable dependiente, y en las independientes las demás (sociodemográficas, crime index, past victimisation, barrio?).
+
+Cosas por hacer:
+
+escribir a Esther sobre escala de criminalidad.
+
+buscar bibliografía organización de los factores y agrupación de las variables.
+
+buscar definición de safety perception. quizas una perspectiva desde la psicologia social, más como lo que dimos en behavioral theories, podría encajar bien.
+
+identificar variables que determinan la safety perception
+
+safety score map como el de Cui et al (2023) pag 13.
+
+si algo se excluye del CATPCA, se debe excluir tb de las regresiones que se hagan despues. no se lo que es la variation xd
+
+The CATPCA was conducted on the sample of 101 wards in which the WFC was completed. Variables were excluded from the CATPCA (and the subsequent regression model) if there was low variation across the wards of the sample (i.e. where 85% or more wards returned the same value)
+
+se tiene que hacer para que él solo modele o sea q yo no tengo que agrupar variables.
+
+identificación de las variables que voy a manejar (esto creo que está en la última tutoría que tuve con iñaki. street view images, iluminación por píxeles con la cosa esa que me dijo antaño, tipo de barrio/zona, familiar/unfamiliar places). el problema es que todo esto tendría sentido hacerlo si consigo la desagregación por barrios... si no, no.
+
+hacer una especie de índice con esas variables explicando que incluyen y la fuente de la información (qué encuesta, bbdd, si es un índice la agrupación de variables...)
+
+Fig. 2. Factors influencing travelers’ safety and security perception incluida en la página 3 del artículo de P. Coppola and F. Silvestri es bastante chulo para mapear así mis variables.
+
+hacer una taba como la tabla 1 de ese mismo articulo donde cruza la bibliografía consultada con los factors affecting perceived safety e ir marcado cada factor con una x (es factor as in variable, no factor de latente)
+
+las variables que tenía puestas como crímenes podría tratarlas como past victimisation: no están medidas oficialmente, pero pueden condicionar la percepción si le ha pasado algo particular (ver lo relativo al barrio y eso que no me acuerdo de si mencionaba algo más al respecto).
+
+past victimisation:
+
+As stated above, victimisation experiences, both direct and indirect, seem to impact on perception of (in)security. For instance, Covington and Taylor’s (1991) study showed that in neighbourhoods where residents learned about latest criminal occurrences presented high perceptions of insecurity. Similar findings were observed by Kullberg et al. (2009), Turunen et al. (2010), and Visser et al. (2013) concerning direct victimisation. However, it should be noted that according to Covington and Taylor (1991) direct victimisation only had an effect at neighbourhood level, suggesting a high perception of insecurity by those residents who had been victim of crime.
+
+Additionally, perception of insecurity had also been linked to the occurrence of crime in certain urban areas; therefore, it is also important to determine crimes perceived by the population as frequent and if the area is perceived as a high crime concentration site. Incivilities, as described by Roché (1996, cit. in Lourenço, 2009), comprise minor violations of community norms, which can result in the loss of standards commonly adopted by communities (LaGrange et al., 1992). These authors differentiated disorderly physical surroundings from disruptive social behaviors. The first ones described the disorders of the physical environments (e.g., trash and litter, unkempt lots, abandoned vehicles, condemned houses, and damaged storefronts), while disruptive social behaviors include antisocial conducts, such as public drinking, rowdy and loitering persons, panhandlers, and thoughtless neighbours. Incivilities may not constitute criminal activity per se, but they are still included in criminal variables, since they can contribute to the perception of (in) security, impacting on wellbeing-being and quality of life of citizens and indicating the inability of administrators to cope with problems (Kullberg et al., 2009; LaGrange et al., 1992; Lourenço, 2009, 2010). The presence of incivilities leaves no space for doubts about the deterioration of physical spaces and, as consequence, the public image of a particular urban area (Lewis & Salem, 1988).
+
+Sobre los ancianos. Buscar si se puede aplicar el concepto fear of victimisation paradox de manera más amplia para justificar la creación de los dos índices. Both phenomena are usually known as the fear of victimisation paradox, which consists of high levels of insecurity despite the low values on victimisation experiences (Hale, 1996).
+
+Education como proxy de social class. Relación con el barrio en el que se vive (barrios ricos y pobres, income? y ver distribución por barrios tbm no solo con la encuesta, sino con datos del padrón, si los hay???) -> For Covington and Taylor (1991), education may be assumed as a proxy factor for social class (i.e., lower classes are supposed to correspond to people less educated). These authors concluded that individuals who live in intimidating neighbourhoods, in closer proximity to potential offenders, felt less safe than those living in a higher-class neighbourhood characterized by fewer disturbances and great accessibility to services like policing. Nationality is a less studied variable; however, Carro et al. (2010) and Allik and Kearns (2017) found that immigrants presented great levels of perceived security than natives.
