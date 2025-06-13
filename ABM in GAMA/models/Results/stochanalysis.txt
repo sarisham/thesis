@@ -1,0 +1,61 @@
+== STOCHASTICITY ANALYSIS ==
+5 outputs | 2 samples | 30 max replications | Thresholds: [0.05, 0.01, 0.001]
+Meaning: threshold represent the delta of marginal decrease of the minimum value of concerned statistic to decide on the number of replicates
+Exemple: focusing on Standard error the corresponding number of replicates is defined when marginal decrease is lower than arg_min(standard error) * threshold
+
+
+## Output : insecure_rate
+Coefficient of variation
+0.05 : min = 18 | max = 18 | avr = 18
+0.01 : min = 25 | max = 25 | avr = 25
+0.001 : min = 29 | max = 29 | avr = 29
+Standard error
+0.05 : min = 12 | max = 12 | avr = 12
+0.01 : min = 29 | max = 29 | avr = 29
+0.001 : min = 29 | max = 29 | avr = 29
+
+
+## Output : nb_grupos_botellon
+Coefficient of variation
+0.05 : min = 2 | max = 2 | avr = 2
+0.01 : min = 2 | max = 2 | avr = 2
+0.001 : min = 2 | max = 2 | avr = 2
+Standard error
+0.05 : min = 2 | max = 2 | avr = 2
+0.01 : min = 2 | max = 2 | avr = 2
+0.001 : min = 2 | max = 2 | avr = 2
+
+
+## Output : nb_resident_insecure
+Coefficient of variation
+0.05 : min = 6 | max = 6 | avr = 6
+0.01 : min = 21 | max = 21 | avr = 21
+0.001 : min = 29 | max = 29 | avr = 29
+Standard error
+0.05 : min = 11 | max = 11 | avr = 11
+0.01 : min = 11 | max = 11 | avr = 11
+0.001 : min = 25 | max = 25 | avr = 25
+
+
+## Output : real_crime_proxy
+Coefficient of variation
+0.05 : min = 29 | max = 29 | avr = 29
+0.01 : min = 29 | max = 29 | avr = 29
+0.001 : min = 29 | max = 29 | avr = 29
+Standard error
+0.05 : min = 2 | max = 2 | avr = 2
+0.01 : min = 2 | max = 2 | avr = 2
+0.001 : min = 2 | max = 2 | avr = 2
+
+
+## Output : darksens_b
+Coefficient of variation
+0.05 : min = 2 | max = 2 | avr = 2
+0.01 : min = 2 | max = 2 | avr = 2
+0.001 : min = 2 | max = 2 | avr = 2
+Standard error
+0.05 : min = 2 | max = 2 | avr = 2
+0.01 : min = 2 | max = 2 | avr = 2
+0.001 : min = 2 | max = 2 | avr = 2
+
+
