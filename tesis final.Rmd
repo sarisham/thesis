@@ -719,17 +719,7 @@ delitosf <- delitos |>
 
 
   mutate(n = as.numeric(str_replace_all(n, 
-                                        "[,\\.]", "")),  # Eliminar separadores de miles
-         tipo_penal = case_when(
-         tipo_penal %in% c("Homicidios dolosos y asesinatos consumados", 
-                          "Homicidios dolosos y asesinatos en grado tentativa") ~ "homicidios",
-         tipo_penal %in% "Delitos graves y menos graves de lesiones y riña tumultuaria" ~ "lesiones",
-         tipo_penal %in% c("Robos con violencia e intimidación", 
-                          "Robos con fuerza en domicilios, establecimientos y otras instalaciones", 
-                          "Hurtos", 
-                          "Sustracciones de vehículos") ~ "robos",
-         tipo_penal %in% "Resto de criminalidad CONVENCIONAL" ~ "otros",
-         TRUE ~ tipo_penal)) |> 
+                                        "[,\\.]", "")))|> 
   group_by(tipo_penal) |> 
   summarise(n = sum(n, 
                     na.rm = TRUE), 
@@ -838,7 +828,7 @@ Now, these **weights** can be used to compute the **Crime Severity Index (CSI)**
 ```{r}
 # Apply the weights to the relative values of the crimes:
 crime <- delitosf %>%
-  mutate(n = as.numeric(n)) |>   
+  mutate(n = as.numeric(n))   |> 
   mutate(total_n = sum(n, na.rm = TRUE),  
     num_relativo = n / total_n,  # getting relative number
     ponderacion = num_relativo * ponderaciones[tipo_penal]) |> 
@@ -908,31 +898,19 @@ table(pvictimisation_vars$victimized)
 
 Although the original approach involved a simple binary indicator distinguishing between individuals who had or had not experienced victimization, I opted for a more nuanced method: constructing a **weighted victimization index** that reflects not only the presence but also the **severity of the offenses**. Each type of past victimization was assigned a weight based on its relative seriousness, following approximate sentencing guidelines from the Spanish Penal Code. For instance, minor property crimes such as theft received lower weights, while offenses involving physical violence or sexual assault were assigned higher values. This procedure results in a **continuous index** that captures cumulative victimization severity.
 
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| Code        | Description                      | Penal offence                     | Expected sentence (years) | Weight = x / 0.25 |
-+=============+==================================+===================================+===========================+===================+
-| p5_1        | Theft w/o violence (bag, etc.)   | Hurto \>400€                      | 1                         | 4                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_2        | Robbery with violence            | Robo con violencia e intimidación | 3.5                       | 14                |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_3        | Purse-snatching (*tirón*)        | Robo con violencia                | 3.5                       | 14                |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_4        | Robbery in home                  | Robo con fuerza agravado          | 4                         | 16                |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_5        | Attempted robbery in home        | Robo con fuerza menor             | 2                         | 8                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_6        | Theft of mobile phone            | Robo con fuerza menor             | 2                         | 8                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_7        | Theft of other electronic device | Robo con fuerza menor             | 2                         | 8                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_8        | Fraud / scam                     | Estafa                            | 1                         | 4                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_1        | Physical aggression              | Lesiones                          | ≈1.1                      | ≈4.4              |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_2        | Threats or coercion              | Coacción / amenazas               | \~1.0 (if available)      | 4                 |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_3        | Sexual aggression                | Agresión sexual (1–4 years)       | 2.5                       | 10                |
-+-------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| Code | Description | Penal offence | Expected sentence (years) | Weight = x / 0.25 |
+|----|----|----|----|----|
+| p5_1 | Theft w/o violence (bag, etc.) | Hurto \>400€ | 1 | 4 |
+| p5_2 | Robbery with violence | Robo con violencia e intimidación | 3.5 | 14 |
+| p5_3 | Purse-snatching (*tirón*) | Robo con violencia | 3.5 | 14 |
+| p5_4 | Robbery in home | Robo con fuerza agravado | 4 | 16 |
+| p5_5 | Attempted robbery in home | Robo con fuerza menor | 2 | 8 |
+| p5_6 | Theft of mobile phone | Robo con fuerza menor | 2 | 8 |
+| p5_7 | Theft of other electronic device | Robo con fuerza menor | 2 | 8 |
+| p5_8 | Fraud / scam | Estafa | 1 | 4 |
+| p6_1 | Physical aggression | Lesiones | ≈1.1 | ≈4.4 |
+| p6_2 | Threats or coercion | Coacción / amenazas | \~1.0 (if available) | 4 |
+| p6_3 | Sexual aggression | Agresión sexual (1–4 years) | 2.5 | 10 |
 
 ```{r}
 # Synthetic index (with weights)
@@ -1397,7 +1375,7 @@ While developing the model in GAMA, I noticed that the shapefile used to represe
 
 ```{r}
 # Combine neighborhoods 8 and 9
-p13_comb <- pampre %>%
+pampre <- pampre %>%
   mutate(
     barrio = case_when(
                     barrio %in% c("8", "9") ~ "8", 
@@ -1714,7 +1692,7 @@ print(results_table)
 ### Final Model
 
 ```{r}
-modelo_mv <- lm(cbind(gen_ins, inst_ins) ~ agez + gender  + income + nationality + employment + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_6 + p12 + p15 + p16 + p13a  + p14z + p7_7 + p8 + p9, data = pampre) # este modelo es incluso mejor que el de antes, pero si lo paso por CV es peor... asi q mejor me quedo como estoy + p13a*gender + p10_3*barrio + p7_7*p14z
+modelo_mv <- lm(cbind(gen_ins, inst_ins) ~ agez + gender  + income + nationality + employment + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_6 + p12 + p15 + p16 + p13a + p13b + p14z + p7_7 + p8 + p9, data = pampre) # este modelo es incluso mejor que el de antes, pero si lo paso por CV es peor... asi q mejor me quedo como estoy + p13a*gender + p10_3*barrio + p7_7*p14z
 
 summary(modelo_mv)
 ```
@@ -1781,6 +1759,7 @@ Given the violation of multivariate normality and univariate normality for the r
 coeftest(modelo_mv, 
          vcov = vcovHC(modelo_mv, type = "HC1"))
 
+table(pampre$victimized)
 ```
 
 To assess the stability and uncertainty of the estimated coefficients under minimal parametric assumptions, we computed **percentile bootstrap confidence intervals** based on 5,000 resamples of the original dataset. The bootstrap procedure involved repeated estimation of the regression model on resampled data, storing the coefficients for each iteration. For example, for the variable `gender`, the 95% percentile confidence interval was **[–0.4488, –0.2197]**, suggesting a statistically significant and negative association with general insecurity (`gen_ins`). This result confirms that, controlling for all other covariates, women report higher levels of perceived insecurity in public space than men. The bootstrap approach provides robust inference by bypassing the need for normally distributed residuals or homoscedasticity, which were previously found to be violated in diagnostic testing.
@@ -1820,7 +1799,7 @@ results <- boot(data = pampre, statistic = boot_fn, R = 5000)
 names(results$t0)
 
 # Get bootstrap CI for gender (or any other variable)
-boot.ci(results, type = "perc", index = which(names(results$t0) == "gender"))
+boot.ci(results, type = "perc", index = which(names(results$t0) == "p7_8.Q"))
 
 ```
 
@@ -1832,26 +1811,21 @@ The following elements are specific to the development of the agent-based model 
 
 Here, I prepare a synthetic sample of agents from survey data to be used in the ABM. It begins by selecting key sociodemographic and attitudinal variables, creating age categories, and drawing a stratified random sample of 20% from each age group within each neighborhood. Neighborhood identifiers are then replaced with meaningful names, including the fusion of two neighborhoods (8 and 9) into a single category, "Ermitagaña-Mendebaldea," since they are also grouped together in the shapefile that I will be using in GAMA. The resulting dataset is cleaned and exported as a CSV file.
 
+> dplyr::select(gender, age, income, employment, nationality, victimized, barrio, gen_ins, p7_1, p7_8, p10_3, p10_4, p10_5, p10_6, p12, p15, p16, p13a, p13b, p18, p19, p7_7, p8, p9)
+>
+> mutate(age_group = cut(age, \# Create age group categories breaks = c(0, 30, 50, Inf), labels = c("young", "middle", "senior"), right = FALSE)) \|\> group_by(age_group, barrio) %\>% \# Stratify by age group and neighborhood sample_frac(0.2) \|\> \# Sample 20% of each group ungroup() \|\> dplyr::mutate(barrio_res = case_when( \# Replace barrio IDs with descriptive names barrio == "1" \~ "Iturrama", barrio == "2" \~ "San Juan/Donibane", barrio == "3" \~ "Casco Viejo/Alde Zaharra", barrio == "4" \~ "Ensanche/Zabalgunea", barrio == "5" \~ "Milagrosa-Arrosadia", barrio == "6" \~ "Rochapea/Arrotxapea", barrio == "7" \~ "Mendillorri", barrio %in% c("8", "9") \~ "Ermitagaña-Mendebaldea", barrio == "10" \~ "San Jorge-Sanduzelai", barrio == "11" \~ "Txantrea", barrio == "12" \~ "Etxabakoitz", barrio == "13" \~ "Lezkairu", barrio == "14" \~ "Buztintxuri-Euntzetxiki" ), barrio_res = as.factor(barrio_res)) \|\> dplyr::select(-age_group, -barrio)
+
 ```{r}
+
 # esta es la mejor combinación de group_by. todas las demás que he probado generaban alguna variable que no coincidia con la distirbución original. igualmente, age va fatal... pero es necesaria para el segundo componente; en caso de que trabaje solo con el primero, la elimino. 
-
-
+#rm(agents)
 set.seed(123)  # Set seed for reproducibility
 
 # Prepare a sample of agents from the survey data
 agents <- pampre %>%
   mutate(p14z = as.numeric(p14z)) |>  
-  dplyr::select(gender, age, income, employment, 
-                nationality, victimized, barrio, gen_ins,
-                p7_1, p7_8, p10_3, p10_4, p10_5, p10_6, p12,
-                p15, p16, p13a, p13b, p18, p19, p7_7, p8, p9) |> 
-  mutate(age_group = cut(age,  # Create age group categories
-                         breaks = c(0, 30, 50, Inf),
-                         labels = c("young", "middle", "senior"),
-                         right = FALSE)) |> 
-  group_by(age_group, barrio) %>%  # Stratify by age group and neighborhood
-  sample_frac(0.2) |>  # Sample 20% of each group
-  ungroup() |> 
+  dplyr::select(gender, nationality, victimized, barrio, gen_ins,
+                p7_8, age) |> 
   dplyr::mutate(barrio_res = case_when(  # Replace barrio IDs with descriptive names
                                     barrio == "1" ~ "Iturrama",
                                     barrio == "2" ~ "San Juan/Donibane",
@@ -1860,24 +1834,241 @@ agents <- pampre %>%
                                     barrio == "5" ~ "Milagrosa-Arrosadia",
                                     barrio == "6" ~ "Rochapea/Arrotxapea",
                                     barrio == "7" ~ "Mendillorri",
-                                    barrio %in% c("8", "9") ~ "Ermitagaña-Mendebaldea",
-                                    barrio == "10" ~ "San Jorge-Sanduzelai",
-                                    barrio == "11" ~ "Txantrea",
-                                    barrio == "12" ~ "Etxabakoitz",
-                                    barrio == "13" ~ "Lezkairu",
-                                    barrio == "14" ~ "Buztintxuri-Euntzetxiki"
+                                    barrio == "8" ~ "Ermitaga�a-Mendebaldea",
+                                    barrio == "9" ~ "San Jorge-Sanduzelai",
+                                    barrio == "10" ~ "Txantrea",
+                                    barrio == "11" ~ "Etxabakoitz",
+                                    barrio == "12" ~ "Lezkairu",
+                                    barrio == "13" ~ "Buztintxuri-Euntzetxiki"
                                   ),
-  barrio_res = as.factor(barrio_res)) |> 
-  dplyr::select(-age_group, -barrio)  
+                barrio_res = as.factor(barrio_res)) |> 
+  group_by(gender, barrio_res) %>% # Stratify by gender and neighborhood
+  sample_frac(0.2) |>  # Sample 20% of each group
+  ungroup() |> 
+  dplyr::select(-barrio)  
 
+```
+
+### Extracting the parameters
+
+In agent-based modeling, initializing agents with realistic and heterogeneous behavioral parameters is essential for capturing individual-level variability. Initially, I considered assigning each agent a predicted value of the `gen_ins` index based on a linear regression model, where each agent's perception of unsafety would be computed from the fixed coefficients of sociodemographic predictors (e.g., gender, age).
+
+However, this approach only provides the population mean prediction, neglecting the uncertainty and heterogeneity present in the real data. Given the presence of heteroscedasticity in the residuals (as indicated by diagnostic tests), I opted for a more statistically sound method by leveraging bootstrapped coefficient distributions. This approach preserves the empirical variation of each coefficient and allows me to sample individualized parameters for agents from these distributions. It avoids the unrealistic assumption of homoscedastic and normally distributed errors, thereby providing a richer and more robust initialization of agent-specific values in the simulation.
+
+#### Gender
+
+```{r}
+# Number of agents (replace with your actual number)
+n_agents <- 167
+
+# Extract bootstrap values for gender
+gender_index <- which(names(results$t0) == "gender")
+gender_bootstrap_vals <- results$t[, gender_index]
+
+# Remove NAs (in case of failed fits)
+gender_bootstrap_vals <- na.omit(gender_bootstrap_vals)
+
+# Sample one value per agent
+set.seed(123)
+gender_effects <- sample(gender_bootstrap_vals, size = n_agents, replace = TRUE)
+
+# Asign coeff only to men
+agents$gender_effect <- ifelse(
+  agents$gender == "1",  
+  sample(gender_bootstrap_vals, size = nrow(agents), replace = TRUE),
+  0  # If it is a woman, effect = 0
+)
+
+```
+
+#### **Nationality**
+
+```{r}
+# Extract bootstrap values for Nationality
+nationality_index <- which(names(results$t0) == "nationality")
+nationality_bootstrap_vals <- results$t[, nationality_index]
+
+# Remove NAs (in case of failed fits)
+nationality_bootstrap_vals <- na.omit(nationality_bootstrap_vals)
+
+# Sample one value per agent
+set.seed(123)
+nationality_effects <- sample(nationality_bootstrap_vals, 
+                              size = n_agents, 
+                              replace = TRUE)
+
+
+# Asign coeff only to nationals
+agents$nationality_effect <- ifelse(
+  agents$nationality == "1",  
+  sample(nationality_bootstrap_vals, size = nrow(agents), replace = TRUE),
+  0  
+)
+
+```
+
+#### **Victimized**
+
+```{r}
+# Extract bootstrap values for victimized
+victimized_index <- which(names(results$t0) == "victimized.L")
+victimized_bootstrap_vals <- results$t[, victimized_index]
+
+# Remove NAs (in case of failed fits)
+victimized_bootstrap_vals <- na.omit(victimized_bootstrap_vals)
+
+# Sample one value per agent
+set.seed(123)
+victimized_effects <- sample(victimized_bootstrap_vals, 
+                             size = n_agents, 
+                             replace = TRUE)
+
+# Asign coeff only to low victimized
+agents$victimized_effect <- ifelse(
+  agents$victimized == "low",  
+  sample(victimized_bootstrap_vals, size = nrow(agents), replace = TRUE),
+  0  
+)
+
+```
+
+#### P7_8 "cuando ve grupos de personas haciendo botellón". Alerta
+
+```{r}
+
+# Extract bootstrap values for victimized
+p7_8_index <- which(names(results$t0) == "p7_8.L")
+p7_8_bootstrap_vals <- results$t[, p7_8_index]
+
+# Remove NAs (in case of failed fits)
+p7_8_bootstrap_vals <- na.omit(p7_8_bootstrap_vals)
+
+# Sample one value per agent
+set.seed(123)
+p7_8_effects <- sample(p7_8_bootstrap_vals, 
+                       size = n_agents, 
+                       replace = TRUE)
+
+# Asign coeff only to low victimized
+agents$p7_8_effect <- ifelse(
+  agents$p7_8 == "2",  
+  sample(p7_8_bootstrap_vals, size = nrow(agents), replace = TRUE),
+  0  
+)
+
+```
+
+#### Number of people that is "botellonero"
+
+```{r}
+agents$is_botellonero <- ifelse(agents$age >= 16 & agents$age <= 25 & runif(nrow(agents)) < 0.2, TRUE, FALSE)
+
+```
+
+```{r}
 # Final clean-up 
-agents_clean <- agents
+agents_clean <- agents |> dplyr::select(-age) |> mutate(is_botellonero = case_when(is_botellonero == TRUE ~ "1", is_botellonero == FALSE ~ "0"))
 rownames(agents_clean) <- NULL  # Remove row names
 agents_clean <- as.data.frame(agents_clean, stringsAsFactors = FALSE)
 colnames(agents_clean)  # Check column names
 
 # Export to CSV, ready to use in GAMA
-readr::write_csv(agents_clean, "gama_agents1.csv")  
+readr::write_csv(agents_clean, "gama_agents.csv")  
+
+```
+
+### Creating the crime index proxy
+
+#### Composite safety score for each neighborhood
+
+Now, I calculate a **composite safety score** for each neighborhood based on survey responses to two questions: which neighborhood is perceived as the safest (`p13a`) and which as the most unsafe (`p13b`). Since each respondent picked **only one barrio**, I treat the **number of times each barrio was chosen** as a proxy for positive perception (p13a) or a proxy for negative perception (`p13b`). Then, these counts can be normalized into proportions or scores, creating the composite score:​
+
+$Safety Score= \frac{\text{Votes}_\text{safe}}{\text{Total Votes}} - \frac{\text{Votes}_\text{unsafe}}{\text{Total Votes}}$
+
+The resulting score reflects overall public perception, with higher values indicating barrios perceived as safer.
+
+```{r}
+# Creating a tibble for all categories 
+categorias <- tibble(p13b = factor(as.character(1:13), 
+                                   levels = as.character(1:13)))
+categorias1 <- tibble(p13a = factor(as.character(1:13), 
+                                    levels = as.character(1:13)))
+
+# Counting data
+count_unsafe <- pampre |> 
+  dplyr::select(p13b) |> 
+  group_by(p13b) |> 
+  summarise(casos_p13b = n(), 
+            .groups = "drop")
+
+count_safe <- pampre |> 
+  dplyr::select(p13a) |> 
+  group_by(p13a) |> 
+  summarise(casos_p13a = n(), 
+            .groups = "drop")
+
+# Left_join to ensure all categories are present
+votes_unsafe <- categorias |> 
+  left_join(count_unsafe, by = "p13b") |> 
+  mutate(casos_p13b = replace_na(casos_p13b, 0)) |> 
+  arrange(p13b) |> pull()
+
+votes_safe <- categorias1 |> 
+  left_join(count_safe, by = "p13a") |> 
+  mutate(casos_p13a = replace_na(casos_p13a, 0)) |> 
+  arrange(p13a) |> pull()
+
+
+# Normalize by total responses (or use raw counts if sample size constant)
+total_votes_safe <- sum(votes_safe)
+total_votes_unsafe <- sum(votes_unsafe)
+
+safe_prop <- votes_safe / total_votes_safe
+unsafe_prop <- votes_unsafe / total_votes_unsafe
+
+# Composite score: higher = safer
+composite_score <- safe_prop - unsafe_prop
+
+# Create data frame for mapping
+barrio_scores <- data.frame(
+  barrio_id = 1:13,
+  votes_safe = votes_safe,
+  votes_unsafe = votes_unsafe,
+  safe_prop = safe_prop,
+  unsafe_prop = unsafe_prop,
+  safety_score = composite_score
+) 
+
+```
+
+```{r}
+# Add the crime_index column to pamplonaf
+crime_index <- sample(pamplonaf$crime_index, 
+                      size = 13)
+
+barrio_scores <-  barrio_scores |> 
+  dplyr::mutate(real_crime_proxy = safety_score * crime_index,
+                crime_index = crime_index,
+                barrio_id = case_when(  # Replace barrio IDs with descriptive names
+                                    barrio_id == "1" ~ "Iturrama",
+                                    barrio_id == "2" ~ "San Juan/Donibane",
+                                    barrio_id == "3" ~ "Casco Viejo/Alde Zaharra",
+                                    barrio_id == "4" ~ "Ensanche/Zabalgunea",
+                                    barrio_id == "5" ~ "Milagrosa-Arrosadia",
+                                    barrio_id == "6" ~ "Rochapea/Arrotxapea",
+                                    barrio_id == "7" ~ "Mendillorri",
+                                    barrio_id == "8" ~ "Ermitaga�a-Mendebaldea",
+                                    barrio_id == "9" ~ "San Jorge-Sanduzelai",
+                                    barrio_id == "10" ~ "Txantrea",
+                                    barrio_id == "11" ~ "Etxabakoitz",
+                                    barrio_id == "12" ~ "Lezkairu",
+                                    barrio_id == "13" ~ "Buztintxuri-Euntzetxiki"
+                                  ))
+
+barrio_clean <- barrio_scores |> 
+  dplyr::select(barrio_id, safety_score, real_crime_proxy)
+
+readr::write_csv(barrio_clean, "gama_barrio.csv")  
 
 ```
 
@@ -1918,68 +2109,6 @@ st_write(shp_final, "pamplona_barrios.shp")
 
 ```
 
-## Composite safety score for each neighborhood
-
-Now, I calculate a **composite safety score** for each neighborhood based on survey responses to two questions: which neighborhood is perceived as the safest (`p13a`) and which as the most unsafe (`p13b`). Since each respondent picked **only one barrio**, I treat the **number of times each barrio was chosen** as a proxy for positive perception (p13a) or a proxy for negative perception (`p13b`). Then, these counts can be normalized into proportions or scores, creating the composite score:​
-
-$Safety Score= \frac{\text{Votes}_\text{safe}}{\text{Total Votes}} - \frac{\text{Votes}_\text{unsafe}}{\text{Total Votes}}$
-
-The resulting score reflects overall public perception, with higher values indicating barrios perceived as safer.
-
-```{r}
-# Creating a tibble for all categories 
-categorias <- tibble(p13b = factor(as.character(1:13), 
-                                   levels = as.character(1:13)))
-categorias1 <- tibble(p13a = factor(as.character(1:13), 
-                                    levels = as.character(1:13)))
-
-# Counting data
-count_unsafe <- p13_comb %>%
-  dplyr::select(p13b) %>%
-  group_by(p13b) %>%
-  summarise(casos_p13b = n(), .groups = "drop")
-
-count_safe <- p13_comb %>%
-  dplyr::select(p13a) %>%
-  group_by(p13a) %>%
-  summarise(casos_p13a = n(), .groups = "drop")
-
-# Left_join to ensure all categories are present
-votes_unsafe <- categorias %>%
-  left_join(count_unsafe, by = "p13b") %>%
-  mutate(casos_p13b = replace_na(casos_p13b, 0)) %>%
-  arrange(p13b) |> pull()
-
-# Paso 3: hacer left_join para asegurar todas las categorías estén presentes
-votes_safe <- categorias1 %>%
-  left_join(count_safe, by = "p13a") %>%
-  mutate(casos_p13a = replace_na(casos_p13a, 0)) %>%
-  arrange(p13a) |> pull()
-
-
-
-# Normalize by total responses (or use raw counts if sample size constant)
-total_votes_safe <- sum(votes_safe)
-total_votes_unsafe <- sum(votes_unsafe)
-
-safe_prop <- votes_safe / total_votes_safe
-unsafe_prop <- votes_unsafe / total_votes_unsafe
-
-# Composite score: higher = safer
-composite_score <- safe_prop - unsafe_prop
-
-# Create data frame for mapping
-barrio_scores <- data.frame(
-  barrio_id = 1:13,
-  votes_safe = votes_safe,
-  votes_unsafe = votes_unsafe,
-  safe_prop = safe_prop,
-  unsafe_prop = unsafe_prop,
-  safety_score = composite_score
-)
-
-```
-
 # problemas resueltos
 
 tengo que descubrir bien como interpretar gen_ins, qué significa valor positivo y qué significa valor negativo. Hecho eso, podré identificar los coeficientes de la regresión, porque no tiene sentido que género, ser mujer reduzca -0.33 gen_ins:
@@ -1993,3 +2122,39 @@ gender       -0.4866663  0.0703552  -6.917 9.41e-12 ***
 RESUELTO: las variables binarias se han codificado al revés: el 1 sigue siendo 1 y el 2 se convierte en 0, cuando debería haber sido 1 a 0 y 2 a 1.
 
 "La variable `gender` muestra un efecto significativo sobre la inseguridad percibida (`gen_ins`). Con el grupo de referencia siendo las mujeres, los hombres presentan una percepción significativamente menor de inseguridad (β = −0.374, p \< 0.001), controlando por el resto de factores incluidos en el modelo."
+
+```{r}
+
+# Reading the shapefile containing neighborhood boundaries
+shp <- st_read("PROY_Pol_Edificios/PROY_Pol_Edificios.shp")
+
+# Creating a new grouping variable to merge selected neighborhoods
+shp <- shp |> 
+  filter(str_detect(name, "Plaza|Parque")) |> 
+  mutate(building_type = "parque")
+
+shp <- shp |> 
+  filter(!is.na(building_type))
+
+# Group by the new variable and merge geometries, keeping relevant attributes
+shp_union <- shp |> 
+  group_by(grupo) |> 
+  summarise(across(where(~!inherits(.x, "sfc")), first),
+            .groups = "drop",
+            geometry = st_union(geometry))
+
+# Keeping the rest of the shapefile and merge it with the new grouped area
+shp_rest <- shp[!shp$ID %in% c(0, 9), ]
+
+shp_final <- rbind(shp_rest, shp_union) |> 
+  distinct(ID, 
+           .keep_all = T) |> 
+  arrange(ID) |> 
+  mutate(BARRIO = case_when(BARRIO == "Azpilagaña" ~ "Milagrosa-Arrosadia", 
+                            TRUE ~ BARRIO)) |> 
+  dplyr::select(-grupo)
+
+# Saving the updated shapefile with the merged neighborhood, ready to use in GAMA
+st_write(shp, "parques.shp", append = FALSE)
+table(shp$building)
+```

@@ -1,0 +1,11 @@
+﻿Alumbrado- Puntos de luz:
+     Atributo: FEATURE - Descripción: Código de capa
+     Atributo: ID_N - Descripción: Código de punto de luz
+     Atributo: TIPO - Descripción: Tipo de elemento
+     Atributo: CATEGORIA - Descripción: Punto de luz de alumbrado
+     Atributo: ID_CM - Descripción: Identificador del centro de mando al que pertenece el punto de luz
+     Atributo: LUMINARIA - Descripción: Tipo de luminaria del punto de luz
+     Atributo: ID_FAROLA - Descripción: Código de farola
+     Atributo: ALTURA - Descripción: Altura del punto de luz
+     Atributo: LAMPARA - Descripción: Tipo de lámpara del punto de luz
+     Atributo: POTENCIA - Descripción: Potencia del punto de luz
