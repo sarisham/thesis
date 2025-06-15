@@ -44,19 +44,59 @@ global {
 	  "Buztintxuri-Euntzetxiki":: 0.0000000
 	];
 	
+	
+	// Parameters for power estimation
+  int J <- 1;           // Number of parameter configurations (usually 1 for stochastic analysis)
+  float ES <- 0.3;      // Expected effect size (e.g., 0.1 = small, 0.3 = medium)
+  
+  int n_required <- int(14.091 * (J ^ -0.640) * (ES ^ -1.986)); // Formula from Secchi & Seri (2016)
+
+  init {
+    write "─────────────────────────────────────────────";
+    write "STOCHASTIC ANALYSIS – REPLICATION CALCULATOR";
+    write "Configurations (J): " + J;
+    write "Expected Effect Size (ES): " + ES;
+    write "➤ Estimated runs required for power = 0.95 and α = 0.01: " + n_required;
+    write "─────────────────────────────────────────────";
+  }
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
    // INPUT DATA
-	// Loading the dataset containing resigent attributes and effects
+	// Loading the dataset containing resident attributes and effects
     file resident_csv <- csv_file("../includes/gama_agents.csv", ",", true);
     matrix res_matrix <- matrix(resident_csv);
 		
-		// atributes
+		// attributes loaded from csv
+	list<int> gender <- res_matrix column_at 1;	
 	list<int> nationality <- res_matrix column_at 2;
 	list<string> victimized <- res_matrix column_at 3;
-	list<int> gen_ins <- res_matrix column_at 4;
+	list<float> gen_ins <- res_matrix column_at 4;
 	list<int> p7_8 <- res_matrix column_at 5;
+	list<int> age <- res_matrix column_at 6;
+	list<int> p10_1 <- res_matrix column_at 7;
+	list<int> p10_2 <- res_matrix column_at 8;
+	
 	list<string> barrio_res <- res_matrix column_at 10;
 	
-		// effects
+	list<string> id <- res_matrix column_at 9;
+	list<float> p10_2_escaled <- res_matrix column_at 17;
+    list<float> p10_1_escaled <- res_matrix column_at 16;
+	list<float> darksens <- res_matrix column_at 15;
+	
+	
+		// effects loaded from csv
 	list<float> gender_effect <- res_matrix column_at 11;
 	list<float> nationality_effect <- res_matrix column_at 12;
 	list<float> victimized_effect <- res_matrix column_at 13;
@@ -81,43 +121,42 @@ global {
     geometry shape <- envelope(pamplona_shapefile);	// full simulation area
     graph the_graph;		// road network graph	
     
-   // TIME AND PARAMETERS
+   // TIME AND AGENT PARAMETERS
     float step <- 1 #h;
     date starting_date <- date("2019-09-01-00-00-00"); // Simulation starts Sept 1st, 2019
     int min_work_start <- 6;
     int max_work_start <- 8;
     int min_work_end <- 16; 
     int max_work_end <- 20; 
-   // float probabilidad_ocio_fuera <- 0.2;
     
     float min_speed <- 1.0 #km / #h;  
   	float max_speed <- 5.0 #km / #h; 
-  	float insecure_distance <- 5 #m;
-  	// float threshold_pred <- 0.5;  
+  	float insecure_distance <- 5 #m; // max distance at which residents can detect nearby botelloneros
+  	float threshold_pred <- 1.0;  // threshold above which a resident is considered insecure
+  	float probabilidad_ocio_fuera <- 0.2; // probability of engaging in leisure activity outside home after work
+  	float crime_weight <- 0.5; // importance of crime proxy in nighttime prediction formula
   	
    // POPULATION PARAMETERS
   	int nb_residents <- 167; 	 // number of residents in my sample
   	int nb_insecure_init <- 0; 	 // number of residents feeling insecure at the begininng
   	int nb_grupos_botellon <- 7; // number of botellón gropus
 	int min_grupo <- 6; 		 // group size (botellón)
-	int ciclo_crimen_botellonero <- 3;
+	int ciclo_crimen_botellonero <- 3; // number of days per week botellonero groups are visible
 	  	
   	list<building> all_leisure_buildings;
   	
-  	
-  	int nb_resident_insecure <- nb_insecure_init update: resident count (each.is_insecure);
-	int nb_resident_not_insecure <- nb_residents - nb_insecure_init update: nb_residents - nb_resident_insecure;
-	float insecure_rate update: nb_resident_insecure / nb_residents;
-	
-  	float threshold_pred <- 0.5;
-	float probabilidad_ocio_fuera <- 0.2;
-  	
-  	float crime_weight <- 0.5;
+  	// MONITORED GLOBAL INDICATORS
+  	int nb_resident_insecure <- nb_insecure_init update: resident count (each.is_insecure); // count of residents marked insecure
+	int nb_resident_not_insecure <- nb_residents - nb_insecure_init update: nb_residents - nb_resident_insecure; // remaining secure residents
+	float insecure_rate update: nb_resident_insecure / nb_residents; // proportion of insecure residents in total
+  	float avg_prediction <- 0.0;
+	float stddev_prediction <- 0.0;
+	float max_prediction <- 0.0;
+	float avg_prediction_women <- 0.0;
   	
   	
    // INITIALIZATION PROCEDURE
     init {
-    	
     	// Create spatial features
     	create barrio from: pamplona_shapefile;   
     	ask barrio {
@@ -145,7 +184,7 @@ global {
         list<building> work_building <- building where (each.type="work_place");
         list<building> residential_buildings <- building where (each.type="residence");
 		all_leisure_buildings <- building where (each.type = "leisure");
-        
+   
         
         // FOR BOTELLONEROS
         // Step 1: Get barrios with at least one park
@@ -188,10 +227,9 @@ global {
     	  	list<building> edificios_en_mi_barrio <- residential_buildings where (each intersects my_barrio.shape);            	   
     	    living_place <- one_of(edificios_en_mi_barrio); 
     	    
-			// Extraer índice lumínico del barrio
+			// Extract lightining index per neighborhood
 			lightning_barrio <- my_barrio.lightning;
     		
-
             // Assign work in different neighborhood
 			list<building> work_buildings_fuera <- work_building where !(each intersects my_barrio.shape);
 		    working_place <- one_of(work_buildings_fuera);
@@ -199,6 +237,7 @@ global {
 		    location <- any_location_in(living_place);	    		    
 	    }
 	    
+	    // Randomly select some agents to start as insecure (initial seeding)
 		ask nb_insecure_init among resident {
 			is_insecure <- true;
 			}
@@ -209,8 +248,14 @@ global {
 		  int inseguros <- count(resident where (each.my_barrio = b and each.is_insecure));
 		  return (total > 0) ? (inseguros / total) : 0.0;
 		}
+	}
 	
-	   
+	// Update tracked global indicators every cycle
+	reflex update_stats {
+		avg_prediction <- mean(resident collect each.prediction);
+		stddev_prediction <- standard_deviation(resident collect each.prediction);
+		max_prediction <- max(resident collect each.prediction);
+		avg_prediction_women <- mean(resident where (each.gender = 0) collect each.prediction);
 	}
 }
 
@@ -226,18 +271,17 @@ species barrio {
 	string barrio_name;
     float real_crime_proxy;
     float lightning;
-
-    // Visualization: barrio outlines with pink borders
-    aspect base {
-		draw shape color: # whitesmoke border: # pink width: 3;
-    }
     
-
 	// Assign attributes when created
     init {
 		barrio_name <- self["BARRIO"];       // Name from shapefile attribute
         real_crime_proxy <- barrio_crime_scores[barrio_name]; // Load precomputed crime proxy (the one in map)
         lightning <- lightning_score[barrio_name]; // Simulated light availability (for future use)
+    }
+    
+    // Visualization: barrio outlines with pink borders
+    aspect base {
+		draw shape color: # whitesmoke border: # pink width: 3;
     }
 }
 
@@ -298,10 +342,10 @@ species botellonero {
   	}
   
 	reflex horario_botellon {
-		int dia <- int(cycle / 24);  // Cada 24 ciclos es un día
+		int dia <- int(cycle / 24);  // Every 24 cycles it's a day
 		int hora <- current_date.hour;
 	
-		// Ciclo de 7 días: visibles solo los 3 primeros días (0, 1, 2)
+		// 7 days cycle: only visible first three days (0,1,2) and during night
 		if ((dia mod 7) < ciclo_crimen_botellonero and (hora >= 20 or hora < 3)) {
 			is_visible <- true;
 		} else {
@@ -318,18 +362,19 @@ species botellonero {
 }
 
 
-
-
-
-
 // CREATING RESIDENTS
 species resident skills: [moving] {
+	// data from the CSV
 	int gender; 
     int nationality;
     string victimized;
     string barrio_res;
+    string id;
     float gen_ins;
     int p7_8;
+    int age;
+    int p10_1;
+    int p10_2;
     
     float gender_effect;
 	float nationality_effect;
@@ -337,10 +382,15 @@ species resident skills: [moving] {
 	float p7_8_effect;
 	float darksens_b;
 	float darksens_c;
+	float p10_1_escaled;
+	float p10_2_escaled;
+	float darksens;
 	
-	float prediction;
-    bool is_insecure <- false; // habrá que establecer qué significa esto
+	// dynamic states 
+	float prediction; // continuously recalculated predicted insecurity level
+    bool is_insecure <- false; // whether prediction exceeds threshold
     
+    // location and movement
     building living_place <- nil ;
     building working_place <- nil ; 
     building leisure_place <- one_of(all_leisure_buildings);  
@@ -350,18 +400,23 @@ species resident skills: [moving] {
     float leisure_end_time <- 0.0; 
 	float leisure_duration <- 0.0;
 	
-    string objective;
-    point the_target <- nil ; // esto en lugar de geometry target_barrio <- nil; 
-    path my_path;
-    int botellonero_boost_until;      
+    string objective; // can be "working", "resting", or "leisure"
+    point the_target <- nil ; // target destination for the current activity
+    path my_path; // navigation path to reach target
+    
+    int botellonero_boost_until; // simulation step until which botellonero boost effect lasts 
 	
-	barrio my_barrio <- one_of(barrio where (each.barrio_name = self.barrio_res));
+	barrio my_barrio <- one_of(barrio where (each.barrio_name = self.barrio_res)); // stores actual crime proxy at current barrio (night adjustment)
 	float lightning_barrio <- 0.0;
 	float real_crime_proxy <- 0.0;
 	float crime_weight;
     
+    
+    // --- DAILY LIFE REFLEXES ---
 	// Initial state control
 	reflex safeguard_rest {
+		// Ensures that residents don’t accidentally move early in the morning
+		
 			  // Si están trabajando pero ya pasó el horario máximo
 			 // if objective = "working" and current_date.hour > max_work_end {
 			   // objective <- "resting";
@@ -376,10 +431,10 @@ species resident skills: [moving] {
 	  
 	    
 	// Start workday
+    // When agent's work start hour arrives, update objective and set movement target to work
 	reflex force_work when: floor(current_date.hour) = start_work and objective != "working" {
 		objective <- "working";
 		the_target <- any_location_in(working_place);
-		write " 🛠️ empieza a trabajar a las " + current_date.hour;
 	}
 
 
@@ -392,16 +447,20 @@ species resident skills: [moving] {
  	// End workday: decide between leisure and going home
 	reflex after_work when: floor(current_date.hour) = end_work and objective = "working" {
 		if (rnd(0.0, 1.0) < (1 - probabilidad_ocio_fuera)) { // ← always go to leisure; change to 0.6 for 60% probability
+			
+			// Choose leisure if random draw is under probability
 			objective <- "leisure";
-	        leisure_duration <- rnd(3.0, 5.0); // hours
-	        leisure_end_time <- current_date.hour + leisure_duration;
+	        leisure_duration <- rnd(3.0, 5.0); // Set a random leisure duration
+	        leisure_end_time <- current_date.hour + leisure_duration; // Compute when it ends
+			
+			// Try to find leisure buildings within the same barrio
 			if (rnd(0.0, 1.0) < 0.8) {
-				// 80% en su propio barrio
+      			// Prefer leisure locations within the same barrio
 				list<building> ocio_en_mi_barrio <- all_leisure_buildings where (each intersects my_barrio.shape);
 				if (length(ocio_en_mi_barrio) > 0) {
 					leisure_place <- one_of(ocio_en_mi_barrio);
 				} else {
-					// fallback: si no hay ocio en su barrio, elige cualquiera
+					// fallback: if there is no leisure building on its own neighborhood, goes to another one
 					leisure_place <- one_of(all_leisure_buildings);
 				}
 			} else {
@@ -415,111 +474,87 @@ species resident skills: [moving] {
 				}
 			}
 	        the_target <- any_location_in(leisure_place);
-	        write "🎯 Leisure from " + current_date.hour + " until " + leisure_end_time;
 	    } else {
-	        // Go home
+	        // If not going for leisure, go home
 	        objective <- "resting";
 	        the_target <- any_location_in(living_place);
-	        write " 💤 Ends workday and goes straight home.";
    	 	}	    
 	}
         
-//  reflex after_work when: current_date.hour = end_work and objective = "working" {
-	//objective <- "leisure";
-	//leisure_duration <- rnd(3.0, 5.0);
-	//leisure_end_time <- current_date.hour + leisure_duration;
-	//the_target <- any_location_in(one_of(all_leisure_buildings));    
-//}
-
     
- 	// Finish leisure activity
+ 	// Finish leisure activity: transition from leisure back to rest when leisure ends
 	reflex finish_leisure when: floor(current_date.hour) >= floor(leisure_end_time) and objective = "leisure" {
 		objective <- "resting";
-	    the_target <- any_location_in(living_place);
-  		write "🏠 returns home after leisure. Current hour: " + current_date.hour + ", leisure was set to end at: " + leisure_end_time;
+	    the_target <- any_location_in(living_place); // Go home
 	}
 
- 	// Failsafe: stuck in leisure
+ 	// Fallback: if agent is still in leisure mode beyond expected time, force return home
 	reflex stuck_after_leisure when: current_date.hour > leisure_end_time + 1 and objective = "leisure" {
 		objective <- "resting";
-		the_target <- any_location_in(living_place);
-		write " forzado a volver a casa tras quedarse atascado en ocio.";
+		the_target <- any_location_in(living_place); // Force return home
 	}
 
-//reflex force_home_after_leisure when: objective = "leisure" and floor(current_date.hour) > leisure_end_time + 1 {
-  //objective <- "resting";
-  //the_target <- any_location_in(living_place);
-  //write " ⚠️ forzado a casa tras ocio prolongado. Hora: " + current_date.hour;
-//}
-
- 	 // Insecurity perception prediction
-	reflex cal_pred {
- 		// Step 1: base prediction
-		prediction <- gen_ins + gender_effect + nationality_effect + victimized_effect;
-		
-
-		// Step 2: detect nearby botelloneros
-		list<botellonero> botelloneros_cerca <- botellonero  where (each.is_visible) at_distance insecure_distance;
-
-		// Step 3: if present, increase prediction score
-		if (length(botelloneros_cerca) > 0) {
-			botellonero_boost_until <- cycle + 2;
-		}
-
-		if (cycle < botellonero_boost_until) {
-			// Usamos el valor de criminalidad del barrio del agente
-			float criminalidad_actual <- my_barrio.real_crime_proxy;
-			prediction <- prediction + (length(botelloneros_cerca) * p7_8_effect * (-criminalidad_actual));
-		}
-		
-		// Efecto por sensibilidad a la oscuridad: solo entre las 20:00 y las 07:00
-		int h <- current_date.hour;
-		if (h >= 20 or h < 7) {
-			barrio barrio_donde_esta <- one_of(barrio where (intersects(each.shape, self.location)));
-			if (barrio_donde_esta != nil and barrio_donde_esta = my_barrio) {
-			prediction <- prediction + (lightning_barrio * darksens_b);
-		}
-		}
-		
-		if (h >= 20 or h < 7) {
-			prediction <- prediction + -(crime_weight * my_barrio.real_crime_proxy);
-		}
-		
-		
-		barrio barrio_donde_esta <- one_of(barrio where (intersects(each.shape, self.location)));
-		if (barrio_donde_esta != nil and barrio_donde_esta = my_barrio) {
-			prediction <- prediction + (lightning_barrio * darksens_b);
-		} else if (barrio_donde_esta != nil and barrio_donde_esta != my_barrio) {
-			prediction <- prediction + darksens_c;
-		}
-		
-		// Step 5: update insecurity status
-		is_insecure <- prediction > threshold_pred; // Adjust threshold as wanted
-	}
-    
- 	 // Movement execution
+    // Main movement logic: walks agent toward target location using the graph
 	reflex move when: the_target != nil {     	
 		do goto target: the_target on: the_graph ; 
 		if the_target = location {
 		    the_target <- nil ;
 		}
 	}
+	
+	
+    // INSECURITY CALCULATION
+	reflex cal_pred {
+    	// Step 1: compute base prediction using personal regression coefficients
+		prediction <- gen_ins + gender_effect + nationality_effect + victimized_effect;
+		
+
+		// Step 2: check for nearby botelloneros
+		list<botellonero> botelloneros_cerca <- botellonero  where (each.is_visible) at_distance insecure_distance;
+			// if present, increase prediction score
+		if (length(botelloneros_cerca) > 0) {
+			botellonero_boost_until <- cycle + 2; // Store how long the boost should apply (here 2 hours)
+		}
+
+    	// Step 3: if still under the influence of botellonero presence, adjust prediction
+		if (cycle < botellonero_boost_until) {
+			float criminalidad_actual <- my_barrio.real_crime_proxy; // Current crime score in home barrio
+			prediction <- prediction + (length(botelloneros_cerca) * p7_8_effect * (-criminalidad_actual)); // Apply boost effect
+		}
+		
+		// Step 4–6: apply nighttime adjustments based on crime and lighting
+		int h <- current_date.hour;
+		if (h >= 20 or h < 7) {
+		  // Step 4: penalize nighttime perception using crime score of home barrio
+		  prediction <- prediction - (crime_weight * my_barrio.real_crime_proxy);
+		
+		  // Step 5–6: apply lighting effect depending on current location
+		  barrio barrio_donde_esta <- one_of(barrio where (intersects(each.shape, self.location)));
+		  if (barrio_donde_esta != nil and barrio_donde_esta = my_barrio) {
+		    // If currently located in home barrio, apply detailed lighting effect
+		    prediction <- prediction + (lightning_barrio * darksens_b);
+		  } else if (barrio_donde_esta != nil and barrio_donde_esta != my_barrio) {
+		    // If in a different barrio, apply generic sensitivity to darkness
+		    prediction <- prediction + darksens_c;
+		  }
+		}
+		
+   		// Step 7: assign final label based on threshold
+		is_insecure <- prediction > threshold_pred; // Adjust threshold as wanted
+	}
     	
 	aspect base {
 		if prediction <= -1.0 {
-            draw  circle(38) color: #midnightblue border: #dimgray; // Moderately unsafe (Orange)
+            draw  circle(38) color: #midnightblue border: #dimgray; // Very safe
         } else if prediction > -1 and prediction <= -0.5 {
-            draw  circle(38) color: #royalblue border: #dimgray; // Neutral (Yellow)
-        } else if prediction > 0.5 and prediction <= 0.5 {
-            draw  circle(38) color: #coral border: #dimgray; // Moderately safe (Light Green)
+            draw  circle(38) color: #royalblue border: #dimgray; // Neutral to moderately safe
+        } else if prediction > -0.5 and prediction <= 0.5 {
+            draw  circle(38) color: #coral border: #dimgray; // Moderately unsafe 
         } else {
-            draw  circle(38) color: #red border: #dimgray; // Very safe (Green)
+            draw  circle(38) color: #red border: #dimgray; // Very unsafe
         }
     }
 }
-
-
-
 
 
 
@@ -534,8 +569,7 @@ experiment display_shape type: gui {
      nb_residents) are fixed due to preloaded CSV data.
   ─────────────────────────────────────────────── */
   
-	parameter "Number of residents" var: nb_residents category: "resident" ; //esto creo q hay q quitarlo porque escoge sin tener en cuenta representación d todos los grupos
-	
+	parameter "Number of residents" var: nb_residents category: "resident" ; // Optional: remove if using fixed CSV sampling
 	parameter "minimal speed" var: min_speed category: "resident" min: 0.1 #km/#h ;
 	parameter "maximal speed" var: max_speed category: "resident" max: 5 #km/#h;
     
@@ -548,18 +582,16 @@ experiment display_shape type: gui {
     parameter "Earliest hour to end work" var: min_work_end category: "resident" min: 12 max: 16;
     parameter "Latest hour to end work" var: max_work_end category: "resident" min: 16 max: 23;
     
-    parameter "Number of botelloneros" var: nb_grupos_botellon category: "botellonero" ; //NO FUNCINA
+    parameter "Number of botellonero groups" var: nb_grupos_botellon category: "botellonero" ; 
     
-   // parameter "Threshold de percepción de inseguridad" var: threshold_pred category: "resident" min: -2.0 max: 2.0 step: 0.1;
-    parameter "Prob. de ocio fuera del barrio" var: probabilidad_ocio_fuera category: "resident" min: 0.0 max: 1.0 step: 0.05;
-    parameter "Duración visible botellonero (días)" var: ciclo_crimen_botellonero category: "botellonero" min: 0 max: 7 step: 1;
-	//parameter "Crime weight" var: crime_weight category: "contextual" min: 0.0 max: 1.0 step: 0.2;
+    parameter "Threshold is insecure" var: threshold_pred category: "resident" min: -2.0 max: 2.0 step: 0.1;
+    parameter "Prob. leisure outside own neighborhood" var: probabilidad_ocio_fuera category: "resident" min: 0.0 max: 1.0 step: 0.05;
+    parameter "Nº of days botelloneros are visible" var: ciclo_crimen_botellonero category: "botellonero" min: 0 max: 7 step: 1;
+	// parameter "Crime weight" var: crime_weight category: "contextual" min: 0.0 max: 1.0 step: 0.2;
 
   	// VISUAL DISPLAY 
     output {
-    	
-    	
-    	// Spatial display of city layers
+    	// Spatial display of city layers and agents
 		display pamplona_display type: 3d axes: false background: # whitesmoke {
 			species barrio aspect: base;
             species road aspect: base;
@@ -569,16 +601,18 @@ experiment display_shape type: gui {
             species resident aspect: base;            
       	}
       	
+      	// Charts: objective states, prediction by barrio, insecurity level, safety levels
      	display chart_display refresh: every(10#cycles) {
-     		 // Histogram display tracking resident objectives over time  
- 			chart "People Objectif" type: histogram style: exploded size: {1, 0.5} position: {0, 0.5}{
+     		
+      		// Chart 1: Histogram of current activity (objective) distribution
+ 			chart "People objectif" type: histogram size: {0.5, 0.5} position: {0, 0.5}{
 	     	data "Working" value: resident count (each.objective = "working") color: # palevioletred ;
 	        data "Resting" value: resident count (each.objective = "resting") color: # steelblue ;
 	        data "Leisure" value: resident count (each.objective = "leisure") color: # peru ;
 	  		}
 
-			// Series display tracking prediction per barrio  over time
-			chart "Mean Prediction by Barrio" type: series size: {1, 0.5} position: {0, 0} {
+      		// Chart 2: Line series of average prediction by barrio over time
+			chart "Mean prediction by barrio" type: series size: {0.5, 0.5} position: {0.5, 0.5} {
 				  data "Iturrama" value: mean(resident where (each.barrio_res = "Iturrama") collect each.prediction);
 				  data "San Juan/Donibane" value: mean(resident where (each.barrio_res = "San Juan/Donibane") collect each.prediction);
 				  data "Casco Viejo/Alde Zaharra" value: mean(resident where (each.barrio_res = "Casco Viejo/Alde Zaharra") collect each.prediction);
@@ -594,60 +628,125 @@ experiment display_shape type: gui {
 				  data "Buztintxuri-Euntzetxiki" value: mean(resident where (each.barrio_res = "Buztintxuri-Euntzetxiki") collect each.prediction);
 				}
 			
-			// Series display tracking resident safety perception over time
-			chart "Nº of people feeling insecure" type: series {
+      		// Chart 3: Total number of insecure and secure residents
+			chart "Population classified as insecure (threshold-based)" type: series size: {0.5, 0.5} position: {0.0, 0.0}  {
 				data "secure" value: nb_resident_not_insecure style: line color: #green;
 				data "insecure" value: nb_resident_insecure style: line color: #red;
 				}
 			
-			// Histogram of residents depending on safety level 	
-			chart "Distribution of residents depending on safety level" type: histogram size: {0.5,0.5} position: {0, 0.5} {
+      		// Chart 4: Safety levels grouped by prediction thresholds
+			chart "Distribution of residents depending on safety level" type: histogram size: {0.5, 0.5} position: {0.5, 0.0} {
 				data "<= -1" value: resident count (each.prediction <= - 1.0) color:#midnightblue;
 				data "-1 to -0.5" value: resident count ((each.prediction > -1) and (each.prediction <= -0.5)) color:#royalblue;
 				data "-0.5 to 0.5" value: resident count ((each.prediction > -0.5) and (each.prediction <= 0.5)) color:#coral;
 				data "> 0.5" value: resident count (each.prediction > 0.5) color:#red;	  
-        	}		
+        		}		
 		}
 		
-		// Monitor number of secure and insecure people
+   		// Monitors to track global states
 	    monitor "Number of insecure people" value: nb_resident_insecure;
 		monitor "Number of secure people" value: nb_resident_not_insecure;		
 	}
 }
+
 			
-
-// SENSIBILITY ANALYSIS			
-experiment sens_crime type: batch repeat: 5 keep_seed: true until: cycle > 168 {
+// STOCHASTIC ANALYSIS
+  // Repeats the model several times to evaluate variability in outputs.
+  // Required to decide number of repetitions needed in other experiments.
+experiment stoch type: batch  repeat: 153 until: cycle > 168 keep_simulations:false {
+	output {
+	  monitor "avg_prediction" value: mean(resident collect each.prediction);
+	  monitor "stddev_prediction" value: standard_deviation(resident collect each.prediction);
+	  monitor "max_prediction" value: max(resident collect each.prediction);
+	  monitor "avg_prediction_women" value: mean(resident where (each.gender = 0) collect each.prediction);		  
+	}
 	
-	method exploration;
-
-	parameter "Crime weight" var: crime_weight min: 0.1 max: 1.0  step: 0.2;
-
- 	output {
-	    monitor "Inseguridad media" value: mean(resident collect each.prediction);
-	    monitor "Personas inseguras" value: nb_resident_insecure;
-  	}
-}
-
-
-experiment sens_botelloneros type: batch repeat: 5 keep_seed: true until: cycle > 168 {
-	
-	method exploration;
-
-	parameter "Number of botelloneros" var: nb_grupos_botellon min: 3 max: 15 step: 3;
-}
-
-
-experiment sens_ocio type: batch repeat: 5 keep_seed: true until: cycle > 168 {
-	
-	method exploration;
-
-	parameter "Prob. de ocio fuera del barrio" var: probabilidad_ocio_fuera min: 0.1 max: 1.0  step: 0.2;
-}
-
-
-
-experiment stoch type: batch  repeat: 30 until: cycle > 168 keep_simulations:false {
-	method stochanalyse outputs:["insecure_rate", "nb_resident_insecure"] report:"Results/stochanalysis.txt" results:"Results/stochanalysis.csv" sample:2;
-	
+	method stochanalyse 
+	outputs:["insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women"] 
+	report:"Results/stochanalysis.txt" results:"Results/stochanalysis.csv" sample:2;
 } 
+
+// OAT SENSITIVITY ANALYSIS			
+  // Varies the crime weight parameter to test its effect on insecurity levels
+experiment sens_crime_weight type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+	method exploration;
+	parameter "Crime weight" var: crime_weight min: 0.0 max: 1.0 step: 0.2;
+	int cpt <- 0;
+	reflex saved_d {
+		save [crime_weight,
+		insecure_rate,
+		mean(resident collect each.prediction),
+		standard_deviation(resident collect each.prediction),
+		max(resident collect each.prediction),
+		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_crime_weight_summary" + cpt + ".csv" type: "csv";
+		cpt <- cpt + 1;
+	}
+}
+
+
+  // Tests the effect of the number of botellonero groups on perceived insecurity
+experiment sens_botellon type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+	method exploration;
+	parameter "Nº of botellonero groups" var: nb_grupos_botellon min: 3 max: 15 step: 3;
+	int cpt <- 0;
+	reflex saved_d {
+		save [nb_grupos_botellon,
+		insecure_rate,
+		mean(resident collect each.prediction),
+		standard_deviation(resident collect each.prediction),
+		max(resident collect each.prediction),
+	
+		quantile(resident collect each.prediction, 0.25), // Q1
+		quantile(resident collect each.prediction, 0.50), // Median
+		quantile(resident collect each.prediction, 0.75), // Q3
+		
+		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_botellon_summary" + cpt + ".csv" type: "csv";
+		cpt <- cpt + 1;
+	}
+}
+
+
+  // Tests how increasing the probability of going out after work affects the model
+experiment sens_ocio type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+	method exploration;
+	parameter "Prob. leisure outside own neighborhood" var: probabilidad_ocio_fuera min: 0.1 max: 1.0 step: 0.2;
+	int cpt <- 0;
+	reflex saved_d {
+		save [probabilidad_ocio_fuera,
+		insecure_rate,
+		mean(resident collect each.prediction),
+		standard_deviation(resident collect each.prediction),
+		max(resident collect each.prediction),
+		
+		quantile(resident collect each.prediction, 0.25), // Q1
+		quantile(resident collect each.prediction, 0.50), // Median
+		quantile(resident collect each.prediction, 0.75), // Q3
+		
+		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_ocio_summary" + cpt + ".csv" type: "csv";
+		cpt <- cpt + 1;
+	}
+}
+
+
+  // Adjusts the threshold for classifying someone as insecure
+experiment sens_threshold type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+	method exploration;
+	parameter "Population classified as insecure (threshold-based)" var: threshold_pred min: 0.0 max: 1.0 step: 0.2;
+	int cpt <- 0;
+	reflex saved_d {
+		save [threshold_pred,
+		insecure_rate,
+		mean(resident collect each.prediction),
+		standard_deviation(resident collect each.prediction),
+		max(resident collect each.prediction),
+		
+		quantile(resident collect each.prediction, 0.25), // Q1
+		quantile(resident collect each.prediction, 0.50), // Median
+		quantile(resident collect each.prediction, 0.75), // Q3
+		
+		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_threshold_summary" + cpt + ".csv" type: "csv";
+		cpt <- cpt + 1;
+	}
+}
+
+

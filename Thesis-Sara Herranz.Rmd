@@ -730,7 +730,7 @@ delitosf <- delitos |>
 
 ### Weighting strategy
 
-#### **Developing midpoint approach**
+#### Developing midpoint approach
 
 For each offence, I consulted the Penal Code to identify the minimum and maximum **prison sentences**, or the **financial penalty range** (*multas*) where applicable. To estimate the expected sentence, I used the **midpoint approach**, which provides an approximation of the typical judicial response to each offense and is a standard technique in the absence of distributional data (e.g., StatCan, 2024):
 
@@ -740,11 +740,11 @@ One methodological challenge is the treatment of offences grouped under the labe
 
 To compare fines with prison terms, we assume **relative harm equivalence**, inspired by the Cambridge model: a **1-month prison sentence** is treated as more severe than a **1-month fine**. However, to maintain scale comparability, fines are assigned **lower weights** across the board.
 
-#### **Determining the reference sentence**
+#### Determining the reference sentence
 
 Once expected sentences were computed, to calculate weights, we need a **baseline** crime for comparison. We chose the minimun possible prison term from the dataset as the baseline: **0.25 years (3 months)** for minor assault or *riña tumultuaria*. We set this **as the reference = 1.0**, so that all other crimes are scaled relative to this, normalizing all offences so that the least severe offence has a weight of 1.0, and more serious offences are assigned proportionally higher values
 
-#### **Computing weights**
+#### Computing weights
 
 Now, divide each **expected sentence length** by **0.25** (reference crime):
 
@@ -898,31 +898,19 @@ table(pvictimisation_vars$victimized)
 
 Although the original approach involved a simple binary indicator distinguishing between individuals who had or had not experienced victimization, I opted for a more nuanced method: constructing a **weighted victimization index** that reflects not only the presence but also the **severity of the offenses**. Each type of past victimization was assigned a weight based on its relative seriousness, following approximate sentencing guidelines from the Spanish Penal Code. For instance, minor property crimes such as theft received lower weights, while offenses involving physical violence or sexual assault were assigned higher values. This procedure results in a **continuous index** that captures cumulative victimization severity.
 
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| Code       | Description                      | Penal offence                     | Expected sentence (years) | Weight = x / 0.25 |
-+============+==================================+===================================+===========================+===================+
-| p5_1       | Theft w/o violence (bag, etc.)   | Hurto \>400€                      | 1                         | 4                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_2       | Robbery with violence            | Robo con violencia e intimidación | 3.5                       | 14                |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_3       | Purse-snatching (*tirón*)        | Robo con violencia                | 3.5                       | 14                |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_4       | Robbery in home                  | Robo con fuerza agravado          | 4                         | 16                |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_5       | Attempted robbery in home        | Robo con fuerza menor             | 2                         | 8                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_6       | Theft of mobile phone            | Robo con fuerza menor             | 2                         | 8                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_7       | Theft of other electronic device | Robo con fuerza menor             | 2                         | 8                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p5_8       | Fraud / scam                     | Estafa                            | 1                         | 4                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_1       | Physical aggression              | Lesiones                          | ≈1.1                      | ≈4.4              |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_2       | Threats or coercion              | Coacción / amenazas               | \~1.0 (if available)      | 4                 |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
-| p6_3       | Sexual aggression                | Agresión sexual (1–4 years)       | 2.5                       | 10                |
-+------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| Code | Description | Penal offence | Expected sentence (years) | Weight = x / 0.25 |
+|----|----|----|----|----|
+| p5_1 | Theft w/o violence (bag, etc.) | Hurto \>400€ | 1 | 4 |
+| p5_2 | Robbery with violence | Robo con violencia e intimidación | 3.5 | 14 |
+| p5_3 | Purse-snatching (*tirón*) | Robo con violencia | 3.5 | 14 |
+| p5_4 | Robbery in home | Robo con fuerza agravado | 4 | 16 |
+| p5_5 | Attempted robbery in home | Robo con fuerza menor | 2 | 8 |
+| p5_6 | Theft of mobile phone | Robo con fuerza menor | 2 | 8 |
+| p5_7 | Theft of other electronic device | Robo con fuerza menor | 2 | 8 |
+| p5_8 | Fraud / scam | Estafa | 1 | 4 |
+| p6_1 | Physical aggression | Lesiones | ≈1.1 | ≈4.4 |
+| p6_2 | Threats or coercion | Coacción / amenazas | \~1.0 (if available) | 4 |
+| p6_3 | Sexual aggression | Agresión sexual (1–4 years) | 2.5 | 10 |
 
 ```{r}
 # Synthetic index (with weights)
@@ -1026,7 +1014,7 @@ univariate_analysis(perception_vars)
 
 ```
 
-### **Recoding P11_1 and P11_2**
+### Recoding P11_1 and P11_2
 
 Due to the highly skewed distribution of responses in questions P11_1 and P11_2 (rating security in one's neighborhood and city on a scale from 1 to 10), we implemented and compared three different recoding strategies: (1) conceptually adjacent grouping, (2) empirical quartile-based recoding, and (3) ideal fourths for robustness against skewness and outliers. These strategies were evaluated based on their explanatory power within the CATPCA framework. Below, I detail the conceptual rationale, strengths, and limitations of each approach.
 
