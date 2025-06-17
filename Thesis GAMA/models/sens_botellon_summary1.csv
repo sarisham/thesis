@@ -1,2 +1,2 @@
-nb_grupos_botellon,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),quantile(resident collect each.prediction,0.25),quantile(resident collect each.prediction,0.5),quantile(resident collect each.prediction,0.75),mean((resident where (each.gender = 0)) collect each.prediction)
-6,0.30538922155688625,0.2137788080545253,1.222468041432596,2.7453541509260937,0.8595830394238111,2.1643129058740853,-0.787741697720519,0.6913313961428965
+nb_grupos_botellon,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
+6,0.3532934131736527,0.4708785383065971,1.228131187319264,3.268576412709761,0.9548297761280582

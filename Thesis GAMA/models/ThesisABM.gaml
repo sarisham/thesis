@@ -57,20 +57,8 @@ global {
     write "Configurations (J): " + J;
     write "Expected Effect Size (ES): " + ES;
     write "➤ Estimated runs required for power = 0.95 and α = 0.01: " + n_required;
-    write "─────────────────────────────────────────────";
+    write "─────────────────────────────────────────────";    
   }
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
 	
 	
    // INPUT DATA
@@ -134,7 +122,7 @@ global {
   	float insecure_distance <- 5 #m; // max distance at which residents can detect nearby botelloneros
   	float threshold_pred <- 1.0;  // threshold above which a resident is considered insecure
   	float probabilidad_ocio_fuera <- 0.2; // probability of engaging in leisure activity outside home after work
-  	float crime_weight <- 0.5; // importance of crime proxy in nighttime prediction formula
+  	float crime_weight <- 0.09; // importance of crime proxy in nighttime prediction formula
   	
    // POPULATION PARAMETERS
   	int nb_residents <- 167; 	 // number of residents in my sample
@@ -385,6 +373,7 @@ species resident skills: [moving] {
 	float p10_1_escaled;
 	float p10_2_escaled;
 	float darksens;
+	float crime_weight;
 	
 	// dynamic states 
 	float prediction; // continuously recalculated predicted insecurity level
@@ -409,7 +398,6 @@ species resident skills: [moving] {
 	barrio my_barrio <- one_of(barrio where (each.barrio_name = self.barrio_res)); // stores actual crime proxy at current barrio (night adjustment)
 	float lightning_barrio <- 0.0;
 	float real_crime_proxy <- 0.0;
-	float crime_weight;
     
     
     // --- DAILY LIFE REFLEXES ---
@@ -666,9 +654,10 @@ experiment stoch type: batch  repeat: 153 until: cycle > 168 keep_simulations:fa
 	report:"Results/stochanalysis.txt" results:"Results/stochanalysis.csv" sample:2;
 } 
 
+
 // OAT SENSITIVITY ANALYSIS			
   // Varies the crime weight parameter to test its effect on insecurity levels
-experiment sens_crime_weight type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+experiment sens_crime_weight type: batch repeat: 70 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Crime weight" var: crime_weight min: 0.0 max: 1.0 step: 0.2;
 	int cpt <- 0;
@@ -685,7 +674,7 @@ experiment sens_crime_weight type: batch repeat: 80 keep_seed: true until: cycle
 
 
   // Tests the effect of the number of botellonero groups on perceived insecurity
-experiment sens_botellon type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+experiment sens_botellon type: batch repeat: 70 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Nº of botellonero groups" var: nb_grupos_botellon min: 3 max: 15 step: 3;
 	int cpt <- 0;
@@ -695,11 +684,6 @@ experiment sens_botellon type: batch repeat: 80 keep_seed: true until: cycle > 1
 		mean(resident collect each.prediction),
 		standard_deviation(resident collect each.prediction),
 		max(resident collect each.prediction),
-	
-		quantile(resident collect each.prediction, 0.25), // Q1
-		quantile(resident collect each.prediction, 0.50), // Median
-		quantile(resident collect each.prediction, 0.75), // Q3
-		
 		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_botellon_summary" + cpt + ".csv" type: "csv";
 		cpt <- cpt + 1;
 	}
@@ -707,7 +691,7 @@ experiment sens_botellon type: batch repeat: 80 keep_seed: true until: cycle > 1
 
 
   // Tests how increasing the probability of going out after work affects the model
-experiment sens_ocio type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+experiment sens_ocio type: batch repeat: 70 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Prob. leisure outside own neighborhood" var: probabilidad_ocio_fuera min: 0.1 max: 1.0 step: 0.2;
 	int cpt <- 0;
@@ -717,11 +701,6 @@ experiment sens_ocio type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 		mean(resident collect each.prediction),
 		standard_deviation(resident collect each.prediction),
 		max(resident collect each.prediction),
-		
-		quantile(resident collect each.prediction, 0.25), // Q1
-		quantile(resident collect each.prediction, 0.50), // Median
-		quantile(resident collect each.prediction, 0.75), // Q3
-		
 		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_ocio_summary" + cpt + ".csv" type: "csv";
 		cpt <- cpt + 1;
 	}
@@ -729,21 +708,17 @@ experiment sens_ocio type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 
 
   // Adjusts the threshold for classifying someone as insecure
-experiment sens_threshold type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+experiment sens_threshold type: batch repeat: 70 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Population classified as insecure (threshold-based)" var: threshold_pred min: 0.0 max: 1.0 step: 0.2;
 	int cpt <- 0;
+	
 	reflex saved_d {
 		save [threshold_pred,
 		insecure_rate,
 		mean(resident collect each.prediction),
 		standard_deviation(resident collect each.prediction),
 		max(resident collect each.prediction),
-		
-		quantile(resident collect each.prediction, 0.25), // Q1
-		quantile(resident collect each.prediction, 0.50), // Median
-		quantile(resident collect each.prediction, 0.75), // Q3
-		
 		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_threshold_summary" + cpt + ".csv" type: "csv";
 		cpt <- cpt + 1;
 	}

@@ -1,2 +1,2 @@
 crime_weight,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
-0.2,0.31736526946107785,0.2274414752811268,1.240448393940505,2.7453541509260937,0.7212220998378301
+0.2,0.32335329341317365,0.30758998753508326,1.2112772585046734,2.7907286009260943,0.7786952263807786

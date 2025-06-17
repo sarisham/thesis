@@ -898,19 +898,31 @@ table(pvictimisation_vars$victimized)
 
 Although the original approach involved a simple binary indicator distinguishing between individuals who had or had not experienced victimization, I opted for a more nuanced method: constructing a **weighted victimization index** that reflects not only the presence but also the **severity of the offenses**. Each type of past victimization was assigned a weight based on its relative seriousness, following approximate sentencing guidelines from the Spanish Penal Code. For instance, minor property crimes such as theft received lower weights, while offenses involving physical violence or sexual assault were assigned higher values. This procedure results in a **continuous index** that captures cumulative victimization severity.
 
-| Code | Description | Penal offence | Expected sentence (years) | Weight = x / 0.25 |
-|----|----|----|----|----|
-| p5_1 | Theft w/o violence (bag, etc.) | Hurto \>400€ | 1 | 4 |
-| p5_2 | Robbery with violence | Robo con violencia e intimidación | 3.5 | 14 |
-| p5_3 | Purse-snatching (*tirón*) | Robo con violencia | 3.5 | 14 |
-| p5_4 | Robbery in home | Robo con fuerza agravado | 4 | 16 |
-| p5_5 | Attempted robbery in home | Robo con fuerza menor | 2 | 8 |
-| p5_6 | Theft of mobile phone | Robo con fuerza menor | 2 | 8 |
-| p5_7 | Theft of other electronic device | Robo con fuerza menor | 2 | 8 |
-| p5_8 | Fraud / scam | Estafa | 1 | 4 |
-| p6_1 | Physical aggression | Lesiones | ≈1.1 | ≈4.4 |
-| p6_2 | Threats or coercion | Coacción / amenazas | \~1.0 (if available) | 4 |
-| p6_3 | Sexual aggression | Agresión sexual (1–4 years) | 2.5 | 10 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| Code       | Description                      | Penal offence                     | Expected sentence (years) | Weight = x / 0.25 |
++============+==================================+===================================+===========================+===================+
+| p5_1       | Theft w/o violence (bag, etc.)   | Hurto \>400€                      | 1                         | 4                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_2       | Robbery with violence            | Robo con violencia e intimidación | 3.5                       | 14                |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_3       | Purse-snatching (*tirón*)        | Robo con violencia                | 3.5                       | 14                |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_4       | Robbery in home                  | Robo con fuerza agravado          | 4                         | 16                |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_5       | Attempted robbery in home        | Robo con fuerza menor             | 2                         | 8                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_6       | Theft of mobile phone            | Robo con fuerza menor             | 2                         | 8                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_7       | Theft of other electronic device | Robo con fuerza menor             | 2                         | 8                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p5_8       | Fraud / scam                     | Estafa                            | 1                         | 4                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p6_1       | Physical aggression              | Lesiones                          | ≈1.1                      | ≈4.4              |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p6_2       | Threats or coercion              | Coacción / amenazas               | \~1.0 (if available)      | 4                 |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
+| p6_3       | Sexual aggression                | Agresión sexual (1–4 years)       | 2.5                       | 10                |
++------------+----------------------------------+-----------------------------------+---------------------------+-------------------+
 
 ```{r}
 # Synthetic index (with weights)
@@ -1856,6 +1868,8 @@ agents <- pampre %>%
   ungroup() |> 
   dplyr::select(-barrio)  
 
+table(agents$barrio_res)
+
 ```
 
 ### Extracting the parameters
@@ -1947,6 +1961,10 @@ agents <- agents %>%
     darksens = darksens_b + darksens_c
   )
 
+
+# Export to CSV, ready to use in GAMA
+readr::write_csv(agents, "gama_agents.csv")  
+
 ```
 
 #### Number of people that is "botellonero"
@@ -1976,9 +1994,7 @@ agents_clean <- agents |>
 rownames(agents_clean) <- NULL  # Remove row names
 agents_clean <- as.data.frame(agents_clean, stringsAsFactors = FALSE)
 colnames(agents_clean)  # Check column names
-
-# Export to CSV, ready to use in GAMA
-readr::write_csv(agents, "gama_agents.csv")   
+ 
 
 ```
 
@@ -2070,8 +2086,15 @@ barrio_scores <-  barrio_scores |>
                                     barrio_id == "13" ~ "Buztintxuri-Euntzetxiki"
                                   ))
 
+barrio_scores <- barrio_scores |>
+  mutate(
+    real_crime_proxy_scaled = (real_crime_proxy - min(real_crime_proxy)) / 
+                              (max(real_crime_proxy) - min(real_crime_proxy))
+  )
+
 barrio_clean <- barrio_scores |> 
-  dplyr::select(barrio_id, safety_score, real_crime_proxy)
+  dplyr::select(barrio_id, safety_score, real_crime_proxy, real_crime_proxy_scaled)
+
 
 readr::write_csv(barrio_clean, "gama_barrio.csv")  
 
@@ -2209,16 +2232,328 @@ lum_area <- farolas_por_barrio |>
 
 ```
 
-# problemas resueltos
+# STOCHASTIC ANALYSIS
 
-tengo que descubrir bien como interpretar gen_ins, qué significa valor positivo y qué significa valor negativo. Hecho eso, podré identificar los coeficientes de la regresión, porque no tiene sentido que género, ser mujer reduzca -0.33 gen_ins:
+```{r convergence-plot, fig.width=8, fig.height=10, dpi=300}
+stoch <- read.csv("Thesis GAMA/models/Results/stochanalysis.csv", sep = ";")
 
-**Component 1 (general urban insecurity)** is anchored by both **specific spatial perceptions** (isolated streets and parks, commercial areas, and nightlife zones) and **generalized urban insecurity**. The inverse loadings from p10_1, p10_2, p11_1r, and p11_2r (which are inverse because the item is framed in terms of **feeling safe**) indicate that **higher scores on this component correspond to stronger feelings of insecurity** in both local and city-level settings.
+# Cargar librerías
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(tidyr)
 
-```         
-gender       -0.4866663  0.0703552  -6.917 9.41e-12 ***
+# Visualizar distribuciones con boxplots
+stoch_long <- stoch %>%
+  dplyr::select(-X) |> 
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
+
+ggplot(stoch_long, aes(x = variable, y = value)) +
+  geom_boxplot(fill = "skyblue", color = "gray40") +
+  theme_minimal() +
+  labs(title = "Distribution of output metrics across 153 replications",
+       x = "Metric", y = "Value")
+
+par(mfrow = c(2, 3))  # diseño de 2 filas y 3 columnas
+
+hist(stoch$insecure_rate, main = "Insecure Rate", xlab = "", col = "skyblue")
+hist(stoch$avg_prediction, main = "Avg Prediction", xlab = "", col = "orange")
+hist(stoch$stddev_prediction, main = "SD Prediction", xlab = "", col = "lightgreen")
+hist(stoch$max_prediction, main = "Max Prediction", xlab = "", col = "tomato")
+hist(stoch$avg_prediction_women, main = "Avg Prediction (Women)", xlab = "", col = "orchid")
+
+
+
+# Calcular media, sd e IC al 95% para cada métrica
+stoch_summary <- stoch_long %>%
+  group_by(variable) %>%
+  summarise(
+    mean = mean(value),
+    sd = sd(value),
+    n = n(),
+    se = sd / sqrt(n),
+    CI_lower = mean - 1.96 * se,
+    CI_upper = mean + 1.96 * se
+  )
+
+print(df_summary)
+
 ```
 
-RESUELTO: las variables binarias se han codificado al revés: el 1 sigue siendo 1 y el 2 se convierte en 0, cuando debería haber sido 1 a 0 y 2 a 1.
+```{r convergence-plot, fig.width=8, fig.height=10, dpi=300}
+# Suponiendo que tu dataframe se llama `stoch` y tiene una fila por repetición
+df_long_hist <- stoch %>%
+    dplyr::select(-X) |> 
+  pivot_longer(
+    cols = everything(),
+    names_to = "metric",
+    values_to = "value"
+  ) 
+ggplot(df_long_hist, aes(x = value)) +
+  geom_histogram(bins = 10, fill = "darkblue", color = "white") +
+  facet_wrap(~ metric, scales = "free", nrow = 3, ncol = 2) +
+  labs(x = NULL, y = "Count") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    strip.text = element_text(margin = margin(b = 20)),
+    panel.spacing = unit(1.5, "cm"),
+    axis.title.y = element_text(size = 12, margin = margin(r =20)),
+    axis.title.x = element_text(size = 12, margin = margin(t = 20)),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10))
 
-"La variable `gender` muestra un efecto significativo sobre la inseguridad percibida (`gen_ins`). Con el grupo de referencia siendo las mujeres, los hombres presentan una percepción significativamente menor de inseguridad (β = −0.374, p \< 0.001), controlando por el resto de factores incluidos en el modelo."
+```
+
+Each panel shows the evolution of the cumulative mean for a specific output. The vertical red line indicates the 80th replication, after which all variables show minimal variation, suggesting convergence.
+
+```{r convergence-plot, fig.width=9, fig.height=10, dpi=300}
+
+# Suponiendo que tu data frame se llama `df` y no incluye la columna 'X'
+df_long <- stoch %>%
+  dplyr::select(-X) |> 
+  mutate(replication = row_number()) %>%  # crea columna con el número de réplica
+  pivot_longer(cols = -replication, names_to = "metric", values_to = "value") %>%
+  group_by(metric) %>%
+  mutate(cum_mean = cummean(value))  # calcula la media acumulada por métrica
+
+ggplot(df_long, aes(x = replication, y = cum_mean)) +
+  geom_line(color = "darkblue") +
+    geom_vline(xintercept = 80, color = "red", linetype = "dashed", linewidth = 0.4) +  # línea roja vertical
+
+  facet_wrap(~ metric, nrow = 3, ncol = 2, scales = "free_y") +
+  scale_x_continuous(breaks = seq(0, 160, 20)) +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.01)) +
+  labs(
+    x = "Number of replications",
+    y = "Cumulative mean"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    strip.text = element_text(margin = margin(b = 20)),
+    panel.spacing = unit(1.5, "cm"),  # aquí sí verás el cambio
+    axis.title.y = element_text(size = 12, margin = margin(r =20)),
+    axis.title.x = element_text(size = 12, margin = margin(t = 20)),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10))
+
+```
+
+# SENSITIVITY ANALYSIS
+
+```{r}
+bot0 <- read.csv("Thesis GAMA/models/sens_botellon_summary0.csv")
+bot1 <- read.csv("Thesis GAMA/models/sens_botellon_summary1.csv")
+bot2 <- read.csv("Thesis GAMA/models/sens_botellon_summary2.csv")
+bot3 <- read.csv("Thesis GAMA/models/sens_botellon_summary3.csv")
+bot4 <- read.csv("Thesis GAMA/models/sens_botellon_summary4.csv")
+
+bot <- bind_rows(bot0, bot1, bot2, bot3, bot4)
+
+# Renombrar columnas si es necesario
+colnames(bot) <- c("nb_grupos_botellon", "insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women")
+
+# Transformar a formato largo
+bot <- pivot_longer(
+  bot,
+  cols = -nb_grupos_botellon,
+  names_to = "variable",
+  values_to = "value"
+)
+
+# Gráfico combinado con todas las métricas
+ggplot(bot, aes(x = nb_grupos_botellon, y = value, color = variable)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.4, alpha = 0.4) +
+  scale_y_continuous(breaks = seq(0, 3.5, by = 0.5)) +
+  scale_x_continuous(breaks = seq(0, 15, by = 3)) +
+  labs(
+    x = "Number of botellonero groups",
+    y = "Mean value",
+    color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(
+  legend.position = "bottom",
+  legend.box = "horizontal",
+  axis.title.x = element_text(size = 10, margin = margin(t = 20)),
+  axis.title.y = element_text(size = 10, margin = margin(r = 20))
+  
+) +
+guides(color = guide_legend(nrow = 2))
+
+
+```
+
+```{r}
+
+ocio0 <- read.csv("Thesis GAMA/models/sens_ocio_summary0.csv")
+ocio1 <- read.csv("Thesis GAMA/models/sens_ocio_summary1.csv")
+ocio2 <- read.csv("Thesis GAMA/models/sens_ocio_summary2.csv")
+ocio3 <- read.csv("Thesis GAMA/models/sens_ocio_summary3.csv")
+ocio4 <- read.csv("Thesis GAMA/models/sens_ocio_summary4.csv")
+
+ocio <- bind_rows(ocio0, ocio1, ocio2, ocio3, ocio4)
+
+# Renombrar columnas si es necesario
+colnames(ocio) <- c("probabilidad_ocio_fuera", "insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women")
+
+# Transformar a formato largo
+ocio <- pivot_longer(
+  ocio,
+  cols = -probabilidad_ocio_fuera,
+  names_to = "variable",
+  values_to = "value"
+)
+
+# Gráfico combinado con todas las métricas
+ggplot(ocio, aes(x = probabilidad_ocio_fuera, y = value, color = variable)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.4, alpha = 0.4) +
+  scale_y_continuous(breaks = seq(0, 3.5, by = 0.5)) +
+  scale_x_continuous(breaks = seq(0.1, 1.0, by = 2)) +
+  labs(
+    x = "probability of going out after work",
+    y = "Mean value",
+    color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(
+  legend.position = "bottom",
+  legend.box = "horizontal",
+  axis.title.x = element_text(size = 10, margin = margin(t = 20)),
+  axis.title.y = element_text(size = 10, margin = margin(r = 20))
+  
+) +
+guides(color = guide_legend(nrow = 2))
+
+
+```
+
+```{r}
+
+threshold0 <- read.csv("Thesis GAMA/models/sens_threshold_summary0.csv")
+threshold1 <- read.csv("Thesis GAMA/models/sens_threshold_summary1.csv")
+threshold2 <- read.csv("Thesis GAMA/models/sens_threshold_summary2.csv")
+threshold3 <- read.csv("Thesis GAMA/models/sens_threshold_summary3.csv")
+threshold4 <- read.csv("Thesis GAMA/models/sens_threshold_summary4.csv")
+threshold5 <- read.csv("Thesis GAMA/models/sens_threshold_summary5.csv")
+
+threshold <- bind_rows(threshold0, threshold1, threshold2, threshold3, threshold4, threshold5)
+
+# Renombrar columnas si es necesario
+colnames(threshold) <- c("threshold_pred", "insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women")
+
+# Transformar a formato largo
+threshold <- pivot_longer(
+  threshold,
+  cols = -threshold_pred,
+  names_to = "variable",
+  values_to = "value"
+)
+
+# Gráfico combinado con todas las métricas
+ggplot(threshold, aes(x = threshold_pred, y = value, color = variable)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.4, alpha = 0.4) +
+  scale_y_continuous(breaks = seq(0, 3.5, by = 0.5)) +
+  scale_x_continuous(breaks = seq(0, 15, by = 3)) +
+  labs(
+    x = "threshold for classifying someone as insecure",
+    y = "Mean value",
+    color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(
+  legend.position = "bottom",
+  legend.box = "horizontal",
+  axis.title.x = element_text(size = 10, margin = margin(t = 20)),
+  axis.title.y = element_text(size = 10, margin = margin(r = 20))
+  
+) +
+guides(color = guide_legend(nrow = 2))
+
+```
+
+```{r}
+cw0 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary0.csv")
+cw1 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary1.csv")
+cw2 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary2.csv")
+cw3 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary3.csv")
+cw4 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary4.csv")
+cw5 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary5.csv")
+
+cw <- bind_rows(cw0, cw1, cw2, cw3, cw4, cw5)
+
+# Renombrar columnas si es necesario
+colnames(cw) <- c("crime_weight", "insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women")
+
+# Transformar a formato largo
+cw <- pivot_longer(
+  cw,
+  cols = -crime_weight,
+  names_to = "variable",
+  values_to = "value"
+)
+
+# Gráfico combinado con todas las métricas
+ggplot(cw, aes(x = crime_weight, y = value, color = variable)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.4, alpha = 0.4) +
+  scale_y_continuous(breaks = seq(0, 3.5, by = 0.5)) +
+  scale_x_continuous(breaks = seq(0, 15, by = 3)) +
+  labs(
+    x = "crime weight parameter",
+    y = "Mean value",
+    color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(
+  legend.position = "bottom",
+  legend.box = "horizontal",
+  axis.title.x = element_text(size = 10, margin = margin(t = 20)),
+  axis.title.y = element_text(size = 10, margin = margin(r = 20))
+  
+) +
+guides(color = guide_legend(nrow = 2))
+
+```
+
+```{r}
+
+cw0 <- read.csv("Thesis GAMA/models/sens_victimization_summary0.csv")
+cw1 <- read.csv("Thesis GAMA/models/sens_victimization_summary1.csv")
+cw2 <- read.csv("Thesis GAMA/models/sens_victimization_summary2.csv")
+cw3 <- read.csv("Thesis GAMA/models/sens_victimization_summary3.csv")
+
+cw <- bind_rows(cw0, cw1, cw2, cw3)
+
+# Renombrar columnas si es necesario
+colnames(cw) <- c("sens_victimization_summary", "insecure_rate", "avg_prediction", "stddev_prediction", "max_prediction", "avg_prediction_women")
+
+# Transformar a formato largo
+cw <- pivot_longer(
+  cw,
+  cols = -sens_victimization_summary,
+  names_to = "variable",
+  values_to = "value"
+)
+
+# Gráfico combinado con todas las métricas
+ggplot(cw, aes(x = sens_victimization_summary, y = value, color = variable)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.4, alpha = 0.4) +
+  scale_y_continuous(breaks = seq(0, 3.5, by = 0.5)) +
+  scale_x_continuous(breaks = seq(0, 15, by = 3)) +
+  labs(
+    x = "sens_victimization_summary",
+    y = "Mean value",
+    color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(
+  legend.position = "bottom",
+  legend.box = "horizontal",
+  axis.title.x = element_text(size = 10, margin = margin(t = 20)),
+  axis.title.y = element_text(size = 10, margin = margin(r = 20))
+  
+) +
+guides(color = guide_legend(nrow = 2))
+
+```
