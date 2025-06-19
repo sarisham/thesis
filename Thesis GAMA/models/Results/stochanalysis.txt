@@ -1,0 +1,61 @@
+== STOCHASTICITY ANALYSIS ==
+5 outputs | 2 samples | 153 max replications | Thresholds: [0.05, 0.01, 0.001]
+Meaning: threshold represent the delta of marginal decrease of the minimum value of concerned statistic to decide on the number of replicates
+Exemple: focusing on Standard error the corresponding number of replicates is defined when marginal decrease is lower than arg_min(standard error) * threshold
+
+
+## Output : insecure_rate
+Coefficient of variation
+0.05 : min = 8 | max = 8 | avr = 8
+0.01 : min = 54 | max = 54 | avr = 54
+0.001 : min = 95 | max = 95 | avr = 95
+Standard error
+0.05 : min = 28 | max = 28 | avr = 28
+0.01 : min = 39 | max = 39 | avr = 39
+0.001 : min = 72 | max = 72 | avr = 72
+
+
+## Output : avg_prediction
+Coefficient of variation
+0.05 : min = 73 | max = 73 | avr = 73
+0.01 : min = 73 | max = 73 | avr = 73
+0.001 : min = 152 | max = 152 | avr = 152
+Standard error
+0.05 : min = 19 | max = 19 | avr = 19
+0.01 : min = 41 | max = 41 | avr = 41
+0.001 : min = 99 | max = 99 | avr = 99
+
+
+## Output : stddev_prediction
+Coefficient of variation
+0.05 : min = 4 | max = 4 | avr = 4
+0.01 : min = 24 | max = 24 | avr = 24
+0.001 : min = 71 | max = 71 | avr = 71
+Standard error
+0.05 : min = 7 | max = 7 | avr = 7
+0.01 : min = 11 | max = 11 | avr = 11
+0.001 : min = 11 | max = 11 | avr = 11
+
+
+## Output : max_prediction
+Coefficient of variation
+0.05 : min = 152 | max = 152 | avr = 152
+0.01 : min = 152 | max = 152 | avr = 152
+0.001 : min = 152 | max = 152 | avr = 152
+Standard error
+0.05 : min = 10 | max = 10 | avr = 10
+0.01 : min = 15 | max = 15 | avr = 15
+0.001 : min = 152 | max = 152 | avr = 152
+
+
+## Output : avg_prediction_women
+Coefficient of variation
+0.05 : min = 10 | max = 10 | avr = 10
+0.01 : min = 27 | max = 27 | avr = 27
+0.001 : min = 134 | max = 134 | avr = 134
+Standard error
+0.05 : min = 22 | max = 22 | avr = 22
+0.01 : min = 86 | max = 86 | avr = 86
+0.001 : min = 152 | max = 152 | avr = 152
+
+

@@ -1,0 +1,2 @@
+threshold_pred,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
+0.2,0.874251497005988,0.7822330677507683,0.5352514985246569,2.4794113308927184,1.0533842053927547

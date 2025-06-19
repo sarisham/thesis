@@ -1,0 +1,2 @@
+nb_grupos_botellon,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
+6,0.2934131736526946,0.7714485362576089,0.521883988398721,2.1571398286551826,1.0418734792371798
