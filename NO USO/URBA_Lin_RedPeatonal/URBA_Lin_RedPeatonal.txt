@@ -1,5 +1,0 @@
-﻿Urbanismo y Vivienda- Itinerarios Peatonales- Itinerarios:
-     Atributo: FEATURE - Descripción: Código de capa
-     Atributo: ELEMURB - Descripción: Código de tipo de elemento del plano urbanístico
-     Atributo: PLANOURB - Descripción: Código de plano urbanístico
-     Atributo: ITINERARIO - Descripción: Descripción de tipo de itinerario peatonal

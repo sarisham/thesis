@@ -12,19 +12,19 @@ global {
    // CRIME CONTEXT
 	// Proxy crime scores assigned per neighborhood (barrio).   
 	map<string, float> barrio_crime_scores <- [
-	  "Iturrama"::0.43528964,
-	  "San Juan/Donibane"::0.13103107,
-	  "Casco Viejo/Alde Zaharra":: -0.18877357,
-	  "Ensanche/Zabalgunea"::0.54189118,
-	  "Milagrosa-Arrosadia":: -0.46638176,
-	  "Rochapea/Arrotxapea":: -0.23763261,
-	  "Mendillorri":: 0.04441731,
-	  "Ermitaga�a-Mendebaldea":: 0.15768145,
-	  "San Jorge-Sanduzelai":: -0.42418531,
-	  "Txantrea"::0.04663818,
-	  "Etxabakoitz":: -0.14657712,
-	  "Lezkairu"::0.11770587,
-	  "Buztintxuri-Euntzetxiki":: -0.01110433
+	  "Iturrama"::0.89427313,
+	  "San Juan/Donibane"::0.59251101,
+	  "Casco Viejo/Alde Zaharra":: 0.27533040,
+	  "Ensanche/Zabalgunea":: 1.00000000,
+	  "Milagrosa-Arrosadia":: 0.00000000,
+	  "Rochapea/Arrotxapea":: 0.22687225,
+	  "Mendillorri":: 0.50660793,
+	  "Ermitaga�a-Mendebaldea":: 0.61894273,
+	  "San Jorge-Sanduzelai":: 0.04185022,
+	  "Txantrea":: 0.50881057,
+	  "Etxabakoitz":: 0.31718062,
+	  "Lezkairu":: 0.57929515,
+	  "Buztintxuri-Euntzetxiki":: 0.45154185
 	];
 	
    	// Lightning scores assigned per neighborhood (barrio).   
@@ -122,7 +122,7 @@ global {
   	float insecure_distance <- 5 #m; // max distance at which residents can detect nearby botelloneros
   	float threshold_pred <- 1.0;  // threshold above which a resident is considered insecure
   	float probabilidad_ocio_fuera <- 0.2; // probability of engaging in leisure activity outside home after work
-  	float crime_weight <- 0.09; // importance of crime proxy in nighttime prediction formula
+  	float crime_weight <- 0.5; // importance of crime proxy in nighttime prediction formula
   	
    // POPULATION PARAMETERS
   	int nb_residents <- 167; 	 // number of residents in my sample
@@ -141,6 +141,7 @@ global {
 	float stddev_prediction <- 0.0;
 	float max_prediction <- 0.0;
 	float avg_prediction_women <- 0.0;
+  	float victimization_weight <- 1.0; // scaling factor for victimization effect
   	
   	
    // INITIALIZATION PROCEDURE
@@ -373,7 +374,6 @@ species resident skills: [moving] {
 	float p10_1_escaled;
 	float p10_2_escaled;
 	float darksens;
-	float crime_weight;
 	
 	// dynamic states 
 	float prediction; // continuously recalculated predicted insecurity level
@@ -494,7 +494,7 @@ species resident skills: [moving] {
     // INSECURITY CALCULATION
 	reflex cal_pred {
     	// Step 1: compute base prediction using personal regression coefficients
-		prediction <- gen_ins + gender_effect + nationality_effect + victimized_effect;
+	prediction <- gen_ins + gender_effect + nationality_effect + (victimized_effect * victimization_weight);
 		
 
 		// Step 2: check for nearby botelloneros
@@ -514,7 +514,7 @@ species resident skills: [moving] {
 		int h <- current_date.hour;
 		if (h >= 20 or h < 7) {
 		  // Step 4: penalize nighttime perception using crime score of home barrio
-		  prediction <- prediction - (crime_weight * my_barrio.real_crime_proxy);
+		  prediction <- prediction + (crime_weight * my_barrio.real_crime_proxy);
 		
 		  // Step 5–6: apply lighting effect depending on current location
 		  barrio barrio_donde_esta <- one_of(barrio where (intersects(each.shape, self.location)));
@@ -531,19 +531,18 @@ species resident skills: [moving] {
 		is_insecure <- prediction > threshold_pred; // Adjust threshold as wanted
 	}
     	
+    	
 	aspect base {
-		if prediction <= -1.0 {
+		if prediction <= 0.5 {
             draw  circle(38) color: #midnightblue border: #dimgray; // Very safe
-        } else if prediction > -1 and prediction <= -0.5 {
-            draw  circle(38) color: #royalblue border: #dimgray; // Neutral to moderately safe
-        } else if prediction > -0.5 and prediction <= 0.5 {
-            draw  circle(38) color: #coral border: #dimgray; // Moderately unsafe 
-        } else {
-            draw  circle(38) color: #red border: #dimgray; // Very unsafe
-        }
+        } else if prediction >  0.5 and prediction <= 1 {
+            draw  circle(38) color: #coral border: #dimgray; // Neutral to moderately safe
+        } else if prediction > 1 {
+            draw  circle(38) color: #red border: #dimgray; // Moderately unsafe 
+      
     }
 }
-
+}
 
 
 
@@ -575,7 +574,7 @@ experiment display_shape type: gui {
     parameter "Threshold is insecure" var: threshold_pred category: "resident" min: -2.0 max: 2.0 step: 0.1;
     parameter "Prob. leisure outside own neighborhood" var: probabilidad_ocio_fuera category: "resident" min: 0.0 max: 1.0 step: 0.05;
     parameter "Nº of days botelloneros are visible" var: ciclo_crimen_botellonero category: "botellonero" min: 0 max: 7 step: 1;
-	// parameter "Crime weight" var: crime_weight category: "contextual" min: 0.0 max: 1.0 step: 0.2;
+	parameter "Crime weight" var: crime_weight <- 0.5  category: "contextual" min: 0.0 max: 1.0 step: 0.2;
 
   	// VISUAL DISPLAY 
     output {
@@ -593,7 +592,7 @@ experiment display_shape type: gui {
      	display chart_display refresh: every(10#cycles) {
      		
       		// Chart 1: Histogram of current activity (objective) distribution
- 			chart "People objectif" type: histogram size: {0.5, 0.5} position: {0, 0.5}{
+ 			chart "Resident objectif" type: histogram size: {0.5, 0.5} position: {0, 0.5}{
 	     	data "Working" value: resident count (each.objective = "working") color: # palevioletred ;
 	        data "Resting" value: resident count (each.objective = "resting") color: # steelblue ;
 	        data "Leisure" value: resident count (each.objective = "leisure") color: # peru ;
@@ -617,23 +616,22 @@ experiment display_shape type: gui {
 				}
 			
       		// Chart 3: Total number of insecure and secure residents
-			chart "Population classified as insecure (threshold-based)" type: series size: {0.5, 0.5} position: {0.0, 0.0}  {
+			chart "Residents classified as insecure (threshold-based)" type: series size: {0.5, 0.5} position: {0.0, 0.0}  {
 				data "secure" value: nb_resident_not_insecure style: line color: #green;
 				data "insecure" value: nb_resident_insecure style: line color: #red;
 				}
 			
       		// Chart 4: Safety levels grouped by prediction thresholds
 			chart "Distribution of residents depending on safety level" type: histogram size: {0.5, 0.5} position: {0.5, 0.0} {
-				data "<= -1" value: resident count (each.prediction <= - 1.0) color:#midnightblue;
-				data "-1 to -0.5" value: resident count ((each.prediction > -1) and (each.prediction <= -0.5)) color:#royalblue;
-				data "-0.5 to 0.5" value: resident count ((each.prediction > -0.5) and (each.prediction <= 0.5)) color:#coral;
-				data "> 0.5" value: resident count (each.prediction > 0.5) color:#red;	  
-        		}		
-		}
-		
+				data "<= 0.5 " value: resident count (each.prediction <= 0.5 ) color:#midnightblue;
+				data "0.5 to 1" value: resident count ((each.prediction > 0.5) and (each.prediction <= 1)) color:#coral;
+				data "> 1" value: resident count (each.prediction > 1) color:#red;	  
+        		}
+        	}		
    		// Monitors to track global states
 	    monitor "Number of insecure people" value: nb_resident_insecure;
 		monitor "Number of secure people" value: nb_resident_not_insecure;		
+			
 	}
 }
 
@@ -657,7 +655,7 @@ experiment stoch type: batch  repeat: 153 until: cycle > 168 keep_simulations:fa
 
 // OAT SENSITIVITY ANALYSIS			
   // Varies the crime weight parameter to test its effect on insecurity levels
-experiment sens_crime_weight type: batch repeat: 70 keep_seed: true until: cycle > 168 {
+experiment sens_crime_weight type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Crime weight" var: crime_weight min: 0.0 max: 1.0 step: 0.2;
 	int cpt <- 0;
@@ -674,7 +672,7 @@ experiment sens_crime_weight type: batch repeat: 70 keep_seed: true until: cycle
 
 
   // Tests the effect of the number of botellonero groups on perceived insecurity
-experiment sens_botellon type: batch repeat: 70 keep_seed: true until: cycle > 168 {
+experiment sens_botellon type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Nº of botellonero groups" var: nb_grupos_botellon min: 3 max: 15 step: 3;
 	int cpt <- 0;
@@ -691,7 +689,7 @@ experiment sens_botellon type: batch repeat: 70 keep_seed: true until: cycle > 1
 
 
   // Tests how increasing the probability of going out after work affects the model
-experiment sens_ocio type: batch repeat: 70 keep_seed: true until: cycle > 168 {
+experiment sens_ocio type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Prob. leisure outside own neighborhood" var: probabilidad_ocio_fuera min: 0.1 max: 1.0 step: 0.2;
 	int cpt <- 0;
@@ -708,7 +706,7 @@ experiment sens_ocio type: batch repeat: 70 keep_seed: true until: cycle > 168 {
 
 
   // Adjusts the threshold for classifying someone as insecure
-experiment sens_threshold type: batch repeat: 70 keep_seed: true until: cycle > 168 {
+experiment sens_threshold type: batch repeat: 80 keep_seed: true until: cycle > 168 {
 	method exploration;
 	parameter "Population classified as insecure (threshold-based)" var: threshold_pred min: 0.0 max: 1.0 step: 0.2;
 	int cpt <- 0;
@@ -720,6 +718,21 @@ experiment sens_threshold type: batch repeat: 70 keep_seed: true until: cycle > 
 		standard_deviation(resident collect each.prediction),
 		max(resident collect each.prediction),
 		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_threshold_summary" + cpt + ".csv" type: "csv";
+		cpt <- cpt + 1;
+	}
+}
+
+experiment sens_victimization_weight type: batch repeat: 80 keep_seed: true until: cycle > 168 {
+	method exploration;
+	parameter "Victimization weight" var: victimization_weight min: 1 max: 4.0 step: 1.0;
+	int cpt <- 0;
+	reflex saved_d {
+		save [victimization_weight,
+		insecure_rate,
+		mean(resident collect each.prediction),
+		standard_deviation(resident collect each.prediction),
+		max(resident collect each.prediction),
+		mean(resident where (each.gender = 0) collect each.prediction)] to: "sens_victimization_summary" + cpt + ".csv" type: "csv";
 		cpt <- cpt + 1;
 	}
 }

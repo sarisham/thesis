@@ -1,2 +1,2 @@
 victimization_weight,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
-2.0,0.3712574850299401,0.5226365950693714,1.256302193142934,3.268576412709761,0.995759975547137
+2.0,0.32934131736526945,0.8109632017365344,0.5593673495354292,2.6485849658236384,1.0864210999350326

@@ -1,2 +1,2 @@
 probabilidad_ocio_fuera,insecure_rate,mean(resident collect each.prediction),standard_deviation(resident collect each.prediction),max(resident collect each.prediction),mean((resident where (each.gender = 0)) collect each.prediction)
-0.30000000000000004,0.3712574850299401,0.4864769352117551,1.2307362783167362,2.9619748356277538,0.9795864624862303
+0.30000000000000004,0.31137724550898205,0.7817008682549429,0.5240482952436946,2.1571398286551826,1.0375799863683322
