@@ -1,0 +1,2265 @@
+---
+title: "Thesis: Safety perception in urban spaces, an ABM approach"
+author: "Sara Cristina Herranz Amado"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: true 
+date: "2025-06-19"
+---
+
+```{r}
+pacman::p_load(tidyverse, skimr, DataExplorer, labelled,
+               stringr, dplyr, tidyr, forcats, haven,
+               memisc, DataExplorer, caret, FactoMineR,
+               factoextra, mice, missMDA, cowplot, cv,
+               janitor, pdftools, Gifi, olsrr, car, MVN,
+               sandwich, lmtest, boot, sf)
+
+```
+
+```{r}
+# Survey and crime data
+pamplona_spss <- as.data.frame(read_sav("23-085 - Ayuntamiento de Navarra (SPSS01).sav"))
+
+delitos <- pdf_text("Balance-de-Criminalidad-Cuarto-Trimestre-2022.pdf")[462]
+
+```
+
+# PAMPLONA SURVEY DATA
+
+## Data cleaning and preprocessing
+
+First, values such as `98`, `99`, and `999` in `pamplona_spss` represent missing responses and are converted to `NA` to standardize missing data representation.
+
+```{r}
+# Converting values 98 and 99 into NA 
+pamplona_spss[pamplona_spss == 98 | pamplona_spss == 99 | pamplona_spss == 999] <- NA
+
+```
+
+The Pamplona dataset, originally imported from SPSS, contains variables with labelled values. Labelled variables hold both numeric codes and descriptive labels, with codes representing categories (e.g., “1 = Male”, “2 = Female”). Using `mutate` with `across(where(is.labelled), ~ as_factor(.))`, these labelled variables are converted to R factors, allowing us to retain their descriptive labels. Converting labelled variables in this way ensures that categorical data is treated appropriately in analysis and allows for descriptive interpretation.
+
+```{r}
+# Convertir variables etiquetadas a factores con etiquetas descriptivas
+pamplona <- pamplona_spss |> 
+  mutate(across(where(is.labelled), 
+                ~ as_factor(.)))
+
+```
+
+Converting all variable names to lowercase to ensure uniformity and reduce the risk of errors.
+
+```{r}
+# Converting variable names to lower case
+names(pamplona) <- tolower(names(pamplona))
+```
+
+SPSS datasets often include additional metadata, such as variable labels or formatting attributes, which can clutter the R environment. To clean the dataset, I define a function, `remove_attributes`, which removes labels that contain the full survey question text and SPSS formatting metadata.
+
+```{r}
+# Removing unnecessary attributes from the variables (the description containing the question itself, keeping just the variable code)
+remove_attributes <- function(df) {
+  for (col in names(df)) {
+    attr(df[[col]], 
+         "label") <- NULL
+    attr(df[[col]], 
+         "format.spss") <- NULL
+    # Mantener las etiquetas (labels)
+  }
+  return(df)
+}
+
+pamplona <- remove_attributes(pamplona)
+
+```
+
+To facilitate specific analyses, it may be necessary to work with numeric representations of categorical variables. The function `convert_to_numeric_factor` is applied to convert factor levels back into their original numeric codes. For each factor, the function reassigns levels to their numeric order, converting each level to a corresponding integer. This process is essential for analyses that require numeric input, such as regression models that operate on quantitative values rather than categorical labels.
+
+```{r}
+# Converting the variables to numeric factors, as in the original database, so we can work with the numeric values of the categories
+convert_to_numeric_factor <- function(column) {
+  if (is.factor(column)) {
+    levels(column) <- as.character(1:length(levels(column)))
+    factor(as.numeric(column))
+  } else {
+    column
+  }
+}
+
+pamplona <- pamplona |> 
+  mutate(across(where(is.factor), 
+                convert_to_numeric_factor))
+
+# in case i want to go back to the numeric values i just have to use themutate(across(where(is.labelled), ~ as_factor(.))), as at the beggining of this section
+
+```
+
+The variable “Nacimiento” (P4) consists of four categories: Pamplona, Resto de Navarra, Resto de España, and Otros, indicating a respondent’s place of birth. For the purposes of this analysis, this variable is not of direct interest, so it has been recoded into a simplified version, `np4`, with two broader categories: 1. Spain and 2. Others. Here, "Spain" encompasses individuals born in Pamplona, Resto de Navarra, and Resto de España, while "Others" represents individuals born outside Spain.
+
+The auxiliary variable `p4_otros` specifies the countries for respondents born outside Spain. In cases where `p4_otros` is neither empty nor contains only a dash (`"-"`), `np4` is set to **2** (Others). Otherwise, if no specific condition applies, `np4` adopts the numeric value of `p4` directly, ensuring any remaining cases in `p4` are retained in their original form.
+
+In summary, `np4` is created as a streamlined version of `P4`, with values determined based on the combined conditions of `p4` and `p4_otros`:
+
+-   **1** for individuals born in Spain (as represented by certain values in `p4`),
+
+-   **2** for individuals born outside Spain (identified by specific content in `p4_otros`),
+
+-   The numeric value of `p4` if neither of the above conditions is met.
+
+Regarding `p17_otros`, values represented as `"-"` are converted to `NA`, enhancing data clarity by standardizing missing or irrelevant responses. Further investigation is warranted to assess the relationship between `p17_otros` and `p17`, particularly if `p17` is categorical. It may be necessary to reclassify `p17` to ensure alignment with the objectives of this analysis if additional granularity in response categories proves beneficial.
+
+```{r}
+# creating nP4
+pamplona <- pamplona |> 
+  mutate(nationality = case_when(
+           p4 %in% c(1, 2, 3) ~ 1,
+           !is.na(p4_otros) & p4_otros != "-" ~ 2, # 
+           TRUE ~ as.numeric(as.character(p4))  # mantener otros valores P4 si hay
+         ),
+    p17_otros = na_if(p17_otros, 
+                      "-")) |> # convertir "-" en NA en p17_otros
+  relocate(nationality, 
+           .before = p4)
+
+```
+
+## Feature selection
+
+Feature selection is a crucial step in preparing the data for analysis. By selectively retaining relevant variables, I aim to reduce noise, improve interpretability, and enhance model performance. First, I remove specific columns from the dataset `pamplona`, variables that either provide redundant information or are not essential for the analysis, reducing dimensionality. Then, i rename columns aiming to improve clarity and readability, making it easier to interpret results.
+
+```{r}
+pamplona <- pamplona |> 
+  dplyr::select(-c("estudio", 
+                   "registro",
+                   "p1",
+                   "zona",
+                   "p3_cod", # esto es rango de edad, a lo mejor me interesa.
+                   "p4",
+                   "p4_otros")) |> 
+  dplyr::rename(barrio = p1a,
+                gender = p2,
+                age = p3,
+                employment = p20,
+                education = p21,
+                income = p22)
+
+```
+
+Then I convert each variable to its appropriate data type—binary, ordinal, categorical, or numeric—based on its nature. We convert binary variables to factors, allowing for easier interpretation, categorical encoding, and use in models that handle categorical data differently from continuous data.
+
+First I check the levels of each variable using **`as.character(pamplona[[var]])`**, which converts each variable's values to characters, ensuring that levels are shown as labels instead of factor levels. Then, by using **`paste(cat$categories, collapse = ", ")`** I combine categories into a comma-separated string for easy reading. This will output each variable name followed by its categories in a more readable, line-by-line format, like this:
+
+```{r}
+# Get unique categories for each variable in pamplona
+categories <- lapply(names(pamplona), function(var) {
+  unique_values <- unique(as.character(pamplona[[var]]))
+  list(variable = var, 
+       categories = unique_values)
+})
+
+# Display the results in a cleaner format
+for (cat in categories) {
+  cat("\nVariable:", cat$variable, "\nCategories:", paste(cat$categories, collapse = ", "), "\n")
+}
+
+```
+
+Binary variables represent categories with only two options. Ordinal variables capture data on a ranked scale, and by converting them to ordered factors, I retain their hierarchical nature, which helps statistical methods recognize that certain values represent higher or lower positions in an ordered sequence. Categorical variables have distinct categories with no inherent ordering, and I convert these to nominal factors, ensuring that each category is treated as unique without implying a sequence. Variables representing quantities are converted to numeric type to enable accurate quantitative analysis. Numeric representation allows these variables to participate in arithmetic operations, summaries, and models that require continuous data.
+
+```{r}
+# Binary variables
+binary_vars <- c("gender", 
+                 "nationality",
+                 "p5_1", "p5_2", "p5_3", 
+                 "p5_4", "p5_5", "p5_6", 
+                 "p5_7", "p5_8",
+                 "p6_1", "p6_2", "p6_3",
+                 "p8", 
+                 "p9", 
+                 "p16")
+
+pamplona[binary_vars] <- lapply(pamplona[binary_vars], 
+                                as.factor)
+
+# Ordinal variables (trabajando con números)
+ordinal_vars <- c("p7_1", "p7_2", "p7_3", 
+                  "p7_4", "p7_5", "p7_6", 
+                  "p7_7", "p7_8", 
+                  "p10_1", "p10_2", "p10_3", 
+                  "p10_4", "p10_5", "p10_6", 
+                  "p10_7",
+                  "p12", 
+                  "p15", 
+                  "p19", 
+                  "education", 
+                  "income")
+
+pamplona[ordinal_vars] <- lapply(pamplona[ordinal_vars], 
+                                 function(x) factor(x, 
+                                                    ordered = TRUE))
+
+# Categorical variables
+categorical_vars <- c("barrio",
+                      "p13a", "p13b",
+                      "p18", 
+                      "employment")
+
+pamplona[categorical_vars] <- lapply(pamplona[categorical_vars], 
+                                     as.factor)
+
+# Numeric variables
+numeric_vars <- c("age",
+                  "p11_1", "p11_2",
+                  "p14")
+
+pamplona[numeric_vars] <- lapply(pamplona[numeric_vars], 
+                                 as.numeric)
+
+```
+
+## Missing values
+
+To assess the completeness and reliability of the dataset, we began by calculating the percentage of missing values for each variable. High levels of missing data can undermine the integrity of any statistical analysis, as they may introduce bias or diminish the power of inferential results. Thus, assessing missingness is a critical first step toward understanding which variables may be robust enough for reliable analysis.
+
+Setting a threshold of 40% for missing values is a deliberate decision grounded in both statistical and practical considerations. Retaining variables with excessive missingness could skew insights or complicate downstream methods like imputation, which becomes increasingly challenging as missingness grows. The 40% threshold represents a balance between maximizing available data and ensuring that variables included in the analysis offer a meaningful representation of the underlying population. This cutoff is chosen to mitigate potential biases that high-missingness variables could introduce, ensuring a solid foundation for subsequent analyses.
+
+By preemptively removing variables that exceed this threshold, we are upholding analytical rigor and setting a baseline for data quality, thereby reducing the likelihood of distorted or misleading results due to poor data coverage.
+
+```{r}
+# See % of missing values per variable
+sapply(pamplona, 
+       function(x) sum(is.na(x))*100/nrow(pamplona))
+
+# Remove variables with more than 40% NA
+pamplona <- pamplona |> 
+  dplyr::select(-c("p17", 
+                   "p17_otros"))
+
+```
+
+### Assessing CART with just one variable
+
+To address missing values, I carefully considered the structure of the dataset, which includes binary, ordinal, categorical (with multiple categories), and discrete numerical variables. Imputation with a mix of variable types poses a unique challenge, as different imputation methods are typically better suited to specific variable types, and attempting to apply multiple methods simultaneously often resulted in errors. Many imputation methods require homogeneity in variable types to avoid incompatibility issues during processing.
+
+I initially aimed to test at least two imputation methods for each type of variable to compare their performance. However, due to the variable diversity and associated errors, I ultimately opted for the CART (Classification and Regression Trees) method, implemented via the `mice` package, which can handle all variable types simultaneously. CART’s flexibility with categorical, ordinal, and numeric data simplifies the process without requiring separate treatment for each variable type, allowing me to sidestep the errors caused by mixing methods.
+
+To validate this choice, given the lack of direct comparison across different methods, I applied CART on one representative variable of each type (one categorical and one numeric). Using cross-validation, I compared the resulting distribution against the original distribution to assess the imputation quality. This preliminary step provided a safeguard by visually confirming that the imputed values closely matched the original distribution’s shape, an essential validation in the absence of alternative imputation methods.
+
+After establishing CART as a robust imputation approach for individual variables, I applied it to the entire dataset. Although cross-validation was not feasible at this scale, the preliminary validation on single variables gave confidence that CART would perform similarly across the full dataset. This approach maintains consistency in handling missing values across variable types, ensuring that the dataset remains representative of the underlying population without introducing biases or distortions due to incompatible imputation techniques.
+
+First, we isolate categorical variables in `pamplona` by excluding numeric columns. This step is crucial for later imputing missing values in these. Next, I use multiple imputation on `vars_cat`, focusing on the categorical variables `p18` and `p6_3`. The we do the same with the numerical variables and choose age for the multiple imputation. We use the `mice` package, which leverages "multiple imputations by chained equations," appropriate for handling missing data systematically across variables. Setting `m = 2` creates two imputed datasets, and a fixed seed enhances reproducibility.
+
+```{r}
+# Select categorical variables (non-numeric) for imputation
+vars_cat <- pamplona |> dplyr::select(-c(where(is.numeric)))
+
+# Impute missing values for categorical variable 'p18' using CART method
+mice_imputed_p18 <- data.frame(
+  original = vars_cat$p18,
+  imputed_cart = complete(mice(vars_cat, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$p18)
+
+# Impute missing values for dichotomous variable 'p6_3' using CART method
+mice_imputed_p6_3 <- data.frame(
+  original = vars_cat$p6_3,
+  imputed_cart = complete(mice(vars_cat, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$p6_3)
+
+# Select numeric variables for imputation
+vars_num <- pamplona |> dplyr::select(where(is.numeric))
+
+# Impute missing values for numeric variable 'age' using CART method
+mice_imputed_age <- data.frame(
+  original = vars_num$age,
+  imputed_cart = complete(mice(vars_num, 
+                               m = 2, 
+                               method = "cart", 
+                               seed = 123))$age)
+
+# List of imputed data frames for each variable
+imputed_data <- list(p18 = mice_imputed_p18,
+                     p6_3 = mice_imputed_p6_3,
+                     age = mice_imputed_age)
+
+```
+
+The following visualization step compares the distributions of the original and imputed values for each variable. By plotting, I aim to visually assess whether the CART imputation accurately reflects the original distribution’s shape and variability, helping validate the imputed results. This visual side-by-side layout provides an intuitive sense of how closely the imputed data aligns with the original, a step essential in determining whether the imputation effectively preserves the distributional properties of the original dataset. This comparison serves as a validation step, ensuring that the imputed values are not introducing systematic distortions or biases.
+
+Attending the plot results, the CART imputation performs well across both categorical and continuous variables, preserving original distributions with minimal distortion, thus being a robust method for handling our missing data.
+
+```{r}
+# Define parameters for visual comparison of original vs. imputed data
+variables <- c("original", "imputed_cart")
+titles <- c("Original distribution", "Cart-imputed distribution")
+colors_fill <- c("skyblue", "#15ad4f")
+colors_border <- c("skyblue3", "#808080")
+
+# Initialize an empty plot list
+plots <- list()
+
+# Loop through each variable and create the original and imputed plots
+for (var_name in names(imputed_data)) {
+  for (i in 1:2) {
+    plot <- ggplot(imputed_data[[var_name]], 
+                   aes(x = .data[[variables[i]]])) +
+      geom_bar(fill = colors_fill[i], 
+               color = colors_border[i],
+               position = "identity") +
+      ggtitle(paste(var_name, "-", titles[i])) +
+      theme_classic()
+    plots <- c(plots, list(plot))
+  }
+}
+
+# Combine all six plots into a grid
+plot_grid(plotlist = plots, 
+          nrow = 3, 
+          ncol = 2)
+
+```
+
+### Validating CART with cross-validation
+
+To rigorously validate the imputation quality in this analysis, I implemented cross-validation specifically for the `mice` imputation process. Cross-validation is an essential tool in evaluating imputation methods, allowing me to observe how well the imputed values align with actual values in a controlled manner. By partitioning the data into training and test sets, cross-validation enables testing of imputed values against withheld data, providing an evidence-based assessment of imputation accuracy and robustness.
+
+The function `cv_mice` takes the dataset, imputation method, and other parameters to apply a k-fold cross-validation process. Here, I use a 5-fold cross-validation (`n_folds = 5`) for a balanced approach that provides sufficient variability without over-splitting the data. Each fold serves as a test set in one iteration, while the remaining data acts as a training set for imputation. By setting a seed (`seed = 123`), I ensure that the fold splits are reproducible, maintaining consistency in the evaluation.
+
+Inside each fold iteration, I perform the following steps:
+
+1.  **Data Splitting**: I partition the data into training (`train_data`) and test (`test_data`) sets based on the fold structure. Excluding the test set during imputation ensures that I can evaluate how well the method generalizes to unseen data, an essential aspect of imputation validation.
+
+2.  **Imputation on Training Data**: I apply `mice` to the training data only, using the specified `method` (in this case, "cart"). Here, I impute two versions of the data (`m = 2`), then select the first imputed dataset (`complete(imputed_train, 1)`) as the final training set for evaluation. Limiting to a single completed dataset keeps the process manageable while allowing multiple imputations to inform the model.
+
+3.  **Result Storage**: Each fold iteration outputs a list containing the fully imputed training data (`complete_train`) and the unaltered test data (`test_data`). This format provides the necessary data for comparing imputed and actual values in the test set without contaminating the test data with imputation artifacts, thereby preserving the validity of the evaluation.
+
+After creating this cross-validation setup, I apply the function to the dataset `pamplona` using the `cart` method (`method = "cart"`). The result is a list of imputed and test datasets across the folds, which provides a comprehensive foundation for assessing the imputation quality of CART across different data segments.
+
+In summary, this cross-validation approach helps ensure that the CART method is rigorously evaluated across various data splits. By systematically assessing imputation on independent subsets, I can ascertain the stability and generalizability of the method, thus strengthening the statistical reliability of the entire imputation process.
+
+```{r}
+# Function for cross-validation using MICE
+cv_mice <- function(data, method, n_folds = 5, seed = 123) {
+  set.seed(seed)
+  folds <- createFolds(seq_len(nrow(data)), 
+                       k = n_folds)
+  
+  results <- lapply(folds, function(fold) {
+    train_data <- data[-fold, ]
+    test_data <- data[fold, ]
+    
+    imputed_train <- mice(train_data, 
+                          m = 2, 
+                          method = method, 
+                          seed = seed)
+    complete_train <- complete(imputed_train, 
+                               1)  # Use the first imputed dataset
+    
+    list(train = complete_train, 
+         test = test_data)
+  })
+  
+  results
+}
+
+# Apply cross-validation for `cart` method
+cv_results_cart <- cv_mice(pamplona, 
+                           method = "cart")
+
+```
+
+After completing cross-validation on the imputed data, in order to compare the resulting distributions...
+
+1.  **Assess the consistency and reliability of the imputed values by comparing their distributions across the various folds.**
+
+Since each fold in the cross-validation process represents a different subset of the data, this approach provides insight into how consistently CART performs under varying data conditions. A robust imputation method should yield similar distributions across folds, suggesting that the method generalizes well and is less sensitive to specific data partitions.
+
+The imputed datasets from each fold, stored in `cv_results_cart`, are accessed with `lapply`, extracting the training data (`res$train`) for each fold. This extraction isolates the fully imputed datasets, ensuring that only the imputed training sets are compared, as the test data remains unaltered to maintain the integrity of cross-validation. By focusing on the training datasets, I am directly evaluating the consistency of the imputation process itself, rather than its interaction with withheld data.
+
+Once the imputed datasets for each fold are extracted, I merge them into a single dataset (`combined_imputed_data`) using `do.call(rbind, ...)`. This combined dataset facilitates a unified analysis, allowing for a direct comparison of the distributions of imputed values across folds. By combining the data, I can leverage standard distributional checks (e.g., density plots, boxplots) or statistical tests to quantitatively and visually assess the consistency of imputed values.
+
+The logic behind combining imputed values from each fold lies in assessing the imputation method’s stability across different training sets. If CART produces similar distributions across folds, it implies that the method captures the underlying patterns of the missing data effectively, regardless of data partitioning. Conversely, large variations might indicate sensitivity to specific data subsets, suggesting potential instability or limitations of the method.
+
+By organizing the imputed values this way, I set a strong foundation for statistically validating the imputation method's performance, thus ensuring that the chosen approach is both reliable and reproducible across different data segments.
+
+```{r}
+# Extract imputed values from each fold
+imputed_datasets <- lapply(cv_results_cart, 
+                           function(res) res$train)
+
+# Combine imputed data into one data frame for analysis
+  # Note: Ensure the imputed datasets have the same structure
+combined_imputed_data <- do.call(rbind, 
+                                 imputed_datasets)
+
+```
+
+2.  **Calculate Variability Across Imputed Values**
+
+Assessing variability is essential because it provides insight into how stable the imputed values are under varying data conditions. To rigorously evaluate the consistency of the imputed values across folds, I employ different metrics tailored to numeric and categorical variables. For a robust imputation method, we expect minimal variability across folds, suggesting that the imputed values are not overly influenced by the data partitioning in cross-validation.
+
+For **numeric variables** the consistency of imputed values across folds is evaluated by calculating summary statistics, specifically the mean and standard deviation, which help to identify if imputed values exhibit stability across folds.
+
+The function `analyze_variability` targets a specific variable (`variable_name`) in `combined_imputed_data`, which contains all imputed values across folds. The mean (`mean_value`) and standard deviation (`sd_value`) are computed for the selected variable, ignoring missing values with `na.rm = TRUE`. The mean provides an average imputed value, while the standard deviation quantifies the spread, indicating how much the imputed values fluctuate across folds. Consistent imputation would yield a small standard deviation, implying that the imputed values converge around a stable mean across different folds.
+
+Then, we compare the mean and standard deviation of `age` in the original and imputed datasets. The imputed values are close to the original statistics, suggesting that the imputation method has maintained the underlying distribution characteristics effectively.
+
+```{r}
+# Analyzing variability for a specific variable
+analyze_variability <- function(original_data, imputed_data, variable_name) {
+  # Extract the specific variable in both original and imputed datasets
+  original_values <- original_data[[variable_name]]
+  imputed_values <- imputed_data[[variable_name]]
+  
+  # Calculate mean and standard deviation for original data
+  original_mean <- mean(original_values, 
+                        na.rm = TRUE)
+  original_sd <- sd(original_values, 
+                    na.rm = TRUE)
+  
+  # Calculate mean and standard deviation for imputed data
+  imputed_mean <- mean(imputed_values, 
+                       na.rm = TRUE)
+  imputed_sd <- sd(imputed_values, 
+                   na.rm = TRUE)
+  
+  # Return both original and imputed statistics for comparison
+  list(original = list(mean = original_mean, 
+                       sd = original_sd),
+       imputed = list(mean = imputed_mean, 
+                      sd = imputed_sd))
+}
+
+# Analyzing variability for the "age" variable as an example
+variability_age <- analyze_variability(pamplona, 
+                                       combined_imputed_data, "age")
+print(variability_age)
+
+```
+
+For **categorical variables**, variability is assessed by examining frequency distributions. In `compare_frequency_distributions`, I generate normalized frequency tables (proportions) for both the original and imputed data for each category of `variable_name`. This normalization facilitates direct comparison by ensuring that both distributions are on the same scale, regardless of the absolute number of observations. Then, by comparing the proportions, I can visually and numerically assess how closely the imputed distributions align with the original ones. Variable "p18" exhibits similar distributions in both original and imputed data, sugggesting that CART, again, is effectively capturing and replicating the original distribution patterns.
+
+```{r}
+# Function to calculate and compare frequency distributions
+compare_frequency_distributions <- function(original_data, imputed_data, variable_name) {
+  # Frequency table for original data
+  original_freq <- table(original_data[[variable_name]], 
+                         useNA = "ifany")
+  original_freq <- original_freq / sum(original_freq)  # Convert to proportions
+  
+  # Frequency table for imputed data
+  imputed_freq <- table(imputed_data[[variable_name]], 
+                        useNA = "ifany")
+  imputed_freq <- imputed_freq / sum(imputed_freq)  # Convert to proportions
+  
+  list(original = original_freq, 
+       imputed = imputed_freq)
+}
+
+# Example for variable "p18" which is categorical
+freq_distributions_p18 <- compare_frequency_distributions(pamplona,
+                                                          combined_imputed_data, 
+                                                          "p18")
+print(freq_distributions_p18)
+
+```
+
+3.  **Visualize Distribution of Imputed Values to see if there are any significant differences across folds.**
+
+To thoroughly assess the quality of the imputed values, I visualize the normalized distributions for both numeric and categorical variables, comparing these distributions within the imputed dataset and against the original data. By doing this, I get to detect any significant deviations or inconsistencies, which helps validate the imputation method’s effectiveness in preserving the original data's characteristics.
+
+For **numeric variables**, the function `plot_imputed_distribution_normalized` takes the imputed dataset (`imputed_data`) and a specified variable (`variable_name`) and plots its density-normalized distribution using a histogram. By normalizing to density (`..density..`), I focus on the distribution shape rather than the frequency, allowing a clear comparison of spread and central tendency across imputed values.
+
+```{r}
+# Visualize normalized distribution of imputed values for a specific variable
+plot_imputed_distribution_normalized <- function(imputed_data, variable_name) {
+  ggplot(imputed_data, aes_string(x = variable_name)) +
+    geom_histogram(aes(y = ..density..),  # Use density for normalization
+                   binwidth = 1, 
+                   fill = "blue", 
+                   color = "black", 
+                   alpha = 0.7) +
+    labs(title = paste("Normalized Distribution of Imputed", 
+                       variable_name),
+         x = variable_name, 
+         y = "Density") +
+    theme_minimal()
+}
+
+# Plot for the "age" variable as an example
+plot_imputed_distribution_normalized(combined_imputed_data, 
+                                     "age")
+
+```
+
+I use `compare_original_imputed_normalized` to plot overlapping histograms for the original and imputed datasets, so I can evaluate whether the imputed values accurately reflect the original data. Normalizing both distributions ensures that differences in sample sizes do not skew the comparison, providing a visual representation of how closely the imputed values replicate the original data distribution.
+
+Attending to the results of the plot, the distributions of both the original data and the imputed one is almost the same, with slight differences, indicating that CART effectively preserves statistical characteristics of the data.
+
+```{r}
+# Compare original vs imputed data for a variable with normalized values
+compare_original_imputed_normalized <- function(original_data, imputed_data, variable_name) {
+  original_values <- original_data[[variable_name]]
+  imputed_values <- imputed_data[[variable_name]]
+  
+  # Plot comparison using density for normalization
+  ggplot() +
+    geom_histogram(aes(x = original_values, 
+                       y = ..density..), 
+                   fill = "skyblue", 
+                   alpha = 0.5, 
+                   binwidth = 1) +
+    geom_histogram(aes(x = imputed_values, 
+                       y = ..density..), 
+                   fill = "orange", 
+                   alpha = 0.5, 
+                   binwidth = 1) +
+    labs(title = paste("Normalized Comparison of Original and Imputed", 
+                       variable_name),
+         x = variable_name, 
+         y = "Density") +
+    theme_minimal()
+}
+
+# Comparing for the "age" variable as an example
+compare_original_imputed_normalized(pamplona, 
+                                    combined_imputed_data, 
+                                    "age")
+
+```
+
+For **categorical variables**, as they lack numerical spread, I compare proportional frequency distributions. The function `plot_categorical_distribution_normalized` calculates the normalized frequency (proportion) of each category in both the original and imputed datasets, converting these counts to proportions and allowing for direct comparison, removing any bias from different sample sizes. The bar plot then overlays the proportions of categories in both the original and imputed datasets, facilitating a side-by-side comparison. Once again, the imputed distribution mirrors the original distribution, so the imputation bias is minimal.
+
+```{r}
+# Normalize the frequency counts to proportions
+plot_categorical_distribution_normalized <- function(original_data, imputed_data, variable_name) {
+  # Frequency tables
+  original_freq <- table(original_data[[variable_name]], 
+                         useNA = "ifany")
+  imputed_freq <- table(imputed_data[[variable_name]], 
+                        useNA = "ifany")
+  
+  # Convert to data frames for ggplot
+  original_df <- as.data.frame(prop.table(original_freq))
+  imputed_df <- as.data.frame(prop.table(imputed_freq))
+  colnames(original_df) <- c("Category", 
+                             "Proportion")
+  colnames(imputed_df) <- c("Category", 
+                            "Proportion")
+  
+  # Plotting
+  ggplot() +
+    geom_bar(data = original_df, 
+             aes(x = Category, 
+                 y = Proportion), 
+             stat = "identity", 
+             fill = "skyblue", 
+             alpha = 0.6) +
+    geom_bar(data = imputed_df, 
+             aes(x = Category, 
+                 y = Proportion), 
+             stat = "identity", 
+             fill = "orange", 
+             alpha = 0.4) +
+    labs(title = paste("Normalized Original vs Imputed Data Distribution for",
+                       variable_name),
+         x = variable_name, 
+         y = "Proportion") +
+    theme_minimal()
+}
+
+# Plot for the "p18" variable
+plot_categorical_distribution_normalized(pamplona, 
+                                         combined_imputed_data, 
+                                         "p18")
+
+```
+
+4.  **Imputation of missing values with CART**
+
+Cross-validation helped validate that the CART method effectively preserved the original distribution’s characteristics, both for numeric and categorical variables. Given this initial validation, I now apply CART imputation to the full dataset, treating the missing values directly and creating a complete, imputed dataset.
+
+The `mice` function applies CART-based imputation across all variables in the dataset with missing values. Specifying `m = 2` creates two imputed versions, while `complete(imputed_data, 1)` extracts one of these versions as the final complete dataset (`pamplonaf`). The `seed = 123` ensures reproducibility, so the imputed values remain consistent across runs.
+
+```{r}
+# Imputing based on cart
+pamplonaf <- complete(mice(pamplona, 
+                           m = 2, 
+                           method = "cart",
+                           seed = 123))
+
+```
+
+# Exploratory analysis
+
+## Descriptive analysis function
+
+Univariate descriptive analysis is essential as a first approach before any type of modeling, as it provides foundational insights by summarizing each variable independently, allowing us to examine the distribution, central tendency, and spread of each variable. This analysis is conducted separately for all variables in the dataset, and is structured to generate statistical summaries and visualizations for both numerical and categorical variables.
+
+I defined a function, `univariate analysis`, to automate this process, adapting to both numeric and categorical variables, with tailored summaries and visualizations for each type:
+
+1.  **Numeric variables**: a summary of descriptive statistics is provided, including measures of central tendency and dispersion, such as mean, median, and range. For the visualization, the function uses a histrogram and adjusts its bin width based on the variable, aiming to improve readability. For `age`, a custom bin width of 5 is used to represent age groups clearly. For other variables, the bin width is determined dynamically, with narrower bins for variables with fewer unique values.
+
+2.  **Categorical variables**: a frequency table is generated, showing the count of each category within the variable, providing insights into the distribution of categories and identifies dominant or less common responses. For the visualization, a bar plot is created to visualize category counts and help to identify any potential skew in categorical responses.
+
+If a variable type is unrecognized, the function displays a message, ensuring that all potential issues with variable types are flagged without interrupting the analysis.
+
+```{r}
+# Function to generate univariate analysis
+univariate_analysis <- function(data) {
+  for (col in colnames(data)) {
+   cat("Analysis for", col, "\n")
+    # Check if the column is numeric
+    if (is.numeric(data[[col]])) {
+      summary_stats <- summary(data[[col]])
+      print(summary_stats)
+      
+      # Set binwidth based on the variable
+      if (col == "age") {
+        bin_width <- 5  # Adjust bin width for the 'age' variable
+      } else {
+        num_unique_values <- length(unique(data[[col]]))
+        bin_width <- ifelse(num_unique_values <= 10, 1, 30 / num_unique_values)
+      }
+      
+      # Plot histogram
+      p <- ggplot(data, aes_string(x = col)) +
+        geom_histogram(binwidth = bin_width, 
+                       fill = "blue", 
+                       color = "black") +
+        theme_minimal() +
+        labs(title = paste("Histogram of", col), 
+             x = col, 
+             y = "Frequency")
+      print(p)
+      
+    } else if (is.factor(data[[col]]) || is.character(data[[col]])) {
+      # Convert character to factor if necessary
+      data[[col]] <- as.factor(data[[col]])
+      
+      # Frequency table
+      freq_table <- table(data[[col]])
+      print(freq_table)
+      
+      # Plot bar chart
+      p <- ggplot(data, aes_string(x = col)) +
+        geom_bar(fill = "blue") +
+        theme_minimal() +
+        labs(title = paste("Bar Plot of", col), 
+             x = col, 
+             y = "Count")
+      print(p)
+      
+    } else {
+      cat("Variable type not recognized or not supported.\n")
+    }
+    cat("\n\n")
+  }
+}
+
+```
+
+Instead of applying the function to the whole dataset at the same time, specific subsets of variables are analyzed to focus on particular themes within the dataset. This allows for an organized examination of conceptually related variables.
+
+# Feature engineering
+
+## Building the crime index
+
+To account for not just the frequency but the *severity* of different types of offences reported in Pamplona, I constructed a **Crime Severity Index (CSI)**. This approach draws inspiration from internationally recognized indices, such as the **Canadian Crime Severity Index** (Statistics Canada, 2022) and the **Cambridge Crime Harm Index** (Sherman et al., 2016). These models use judicial sentencing guidelines as proxies for crime seriousness, under the rationale that **the more severe the punishment assigned by courts, the greater the societal harm attributed to the offence**.
+
+The construction of this Crime Severity Index also draws from the foundational work of **Sellin and Wolfgang**, who emphasized the importance of assigning **ratio-scaled seriousness weights** to criminal events (Sellin & Wolfgang, 1964). Unlike approaches that classify only the most serious offence within a criminal event, their method allows each component of the event to be weighted and summed, preserving the **cumulative impact of crime**. This framework assumes that an offence with twice the weight reflects a crime twice as serious, enabling more accurate scaling. Moreover, seriousness was not viewed as a fixed legal classification but as a **measurable dimension based on social harm**, typically assessed via representative judgments or empirical proxies such as sentencing guidelines.
+
+Given that individual sentencing data is not available for the context of Pamplona, the index is constructed using **legal sentencing ranges** from the Spanish Penal Code. This provides a principled way to estimate crime severity weights even in the absence of empirical conviction data.
+
+```{r}
+delitos <- pdf_text("BALANCE-CRIMINALIDAD-CUARTO-TRIMESTRE-2024.pdf")[468]
+
+```
+
+```{r}
+# Cleaning crime data
+lines <- strsplit(delitos, 
+                  "\n")[[1]]
+
+lines <- lines[lines != "" & !grepl("^\\s+$", 
+                                    lines)]
+split_lines <- strsplit(lines, 
+                        "\\s{2,}")
+
+data <- do.call(rbind, 
+                split_lines[7:length(split_lines)])
+
+delitos <- data.frame(data[, c(2, 3)]) 
+colnames(delitos) <- c("tipo_penal", "n")
+
+
+delitosf <- delitos |> 
+  mutate(tipo_penal = str_remove(tipo_penal, 
+                                 "^\\d+\\.\\s*-?\\s*"),
+         year = "2023") |>
+  filter(!tipo_penal %in% c("Municipio de Pamplona/Iruña", 
+                            "TIPOLOGÍA PENAL", 
+                            "I. CRIMINALIDAD CONVENCIONAL",
+                            "II. CIBERCRIMINALIDAD (infracciones penales cometidas en/por medio ciber)",
+                            "Estafas informáticas", 
+                            "Otros ciberdelitos", 
+                            "III. TOTAL CRIMINALIDAD"),
+         !str_detect(tipo_penal, 
+                     "^(5\\.1|5\\.2|7\\.1)\\.-"), 
+         !str_detect(tipo_penal, 
+                     "[0-9].*[A-Za-z]|[A-Za-z].*[0-9]"),
+         !str_detect(n, 
+                     "[A-Za-z]"),
+         !n == "0") |> 
+
+
+  mutate(n = as.numeric(str_replace_all(n, 
+                                        "[,\\.]", "")))|> 
+  group_by(tipo_penal) |> 
+  summarise(n = sum(n, 
+                    na.rm = TRUE), 
+            .groups = 'drop') |> 
+  mutate(year = 2023)
+
+```
+
+### Weighting strategy
+
+#### Developing midpoint approach
+
+For each offence, I consulted the Penal Code to identify the minimum and maximum **prison sentences**, or the **financial penalty range** (*multas*) where applicable. To estimate the expected sentence, I used the **midpoint approach**, which provides an approximation of the typical judicial response to each offense and is a standard technique in the absence of distributional data (e.g., StatCan, 2024):
+
+$$\text{Expected Sentence}=\frac{\text{Minimum Sentence + Maximum Sentence}}{2}​$$
+
+One methodological challenge is the treatment of offences grouped under the label *resto de criminalidad convencional*. This category is not disaggregated into specific offence types, and may include a heterogeneous mix of criminal acts—from low-level infractions to moderate or even serious offences. The lack of specificity makes it impossible to assign a precise sentencing-based weight to each constituent offence. To address this, the category was assigned a baseline weight equivalent to the reference crime—namely, the minimum prison sentence legally defined in the dataset (0.25 years or 3 months). This way, we ensure the category is not excluded from the index and that it is not overrepresented (avoiding inflation of severity based on speculation).
+
+To compare fines with prison terms, we assume **relative harm equivalence**, inspired by the Cambridge model: a **1-month prison sentence** is treated as more severe than a **1-month fine**. However, to maintain scale comparability, fines are assigned **lower weights** across the board.
+
+#### Determining the reference sentence
+
+Once expected sentences were computed, to calculate weights, we need a **baseline** crime for comparison. We chose the minimun possible prison term from the dataset as the baseline: **0.25 years (3 months)** for minor assault or *riña tumultuaria*. We set this **as the reference = 1.0**, so that all other crimes are scaled relative to this, normalizing all offences so that the least severe offence has a weight of 1.0, and more serious offences are assigned proportionally higher values
+
+#### Computing weights
+
+Now, divide each **expected sentence length** by **0.25** (reference crime):
+
+$$wi=\frac{\text{Expected Sentence Length for Offence } i}{0.25 \text{ years}}$$
+
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Offence                          | Sentence Range       | Expected sentence (Years) | Weight (relative to 0.25 y) |
++==================================+======================+===========================+=============================+
+| Homicide                         | 10 – 15 years        | 12.5                      | 50                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Aggravated Homicide              | 15 – 25 years        | 20                        | 80                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Minor Assault / Riña Tumultuaria | 0.25 – 1 year        | 0.625                     | 2.5                         |
+|                                  |                      |                           |                             |
+|                                  | 6 - 24 months (fine) |                           |                             |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Sexual Offence (Minor Grade)     | 1 – 4 years          | 2.5                       | 10                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Rape                             | 4 – 12 years         | 8                         | 32                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Robbery with Force (minor)       | 1 – 3 years          | 2                         | 8                           |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Robbery with Force (aggravated)  | 2 – 6 years          | 4                         | 16                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Robbery with Violence            | 2 – 5 years          | 3.5                       | 14                          |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Theft (\>400€)                   | 0.5 – 1.5 years      | 1                         | 4                           |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+| Theft (\<400€, fine)             | 1 – 3 months (fine)  | 0.165 (approx.)           | 0.66                        |
++----------------------------------+----------------------+---------------------------+-----------------------------+
+
+```{r}
+# Harm-adjusted fine conversion factor
+fine_factor <- 0.25
+
+# Function to compute expected severity
+weighted_severity <- function(prison_min, prison_max, fine_min = NA, fine_max = NA, fine_weight = 0.6, prison_weight = 0.4) {
+  prison_mid <- (prison_min + prison_max) / 2
+  fine_mid <- if (!is.na(fine_min) && !is.na(fine_max)) (fine_min + fine_max) / 2 else 0
+  
+  fine_adjusted <- fine_mid * fine_factor
+  
+  expected <- fine_weight * fine_adjusted + prison_weight * prison_mid
+  return(expected)
+}
+
+# Compute weights relative to reference (0.25 years)
+reference_sentence <- 0.25
+
+# Apply to mixed-sentence crimes
+lesiones_expected <- weighted_severity(prison_min = 0.25, prison_max = 1, 
+                                       fine_min = 0.5, fine_max = 2)  # fine in years
+
+hurtos_expected <- weighted_severity(prison_min = 0.5, prison_max = 1.5, 
+                                     fine_min = 1/12, fine_max = 3/12)  # months to years
+
+# Compute weights
+lesiones_weight <- lesiones_expected / reference_sentence
+hurtos_weight <- hurtos_expected / reference_sentence
+
+```
+
+```{r}
+ponderaciones <- c(
+  "Homicidios dolosos y asesinatos consumados" = 50,
+  "Homicidios dolosos y asesinatos en grado tentativa" = 80,
+  "Delitos graves y menos graves de lesiones y riña tumultuaria" = lesiones_weight,
+  "Delitos contra la libertad sexual" = 10,
+  "Robos con violencia e intimidación" = 14,
+  "Robos con fuerza en domicilios, establecimientos y otras instalaciones" = 8,
+  "Hurtos" = hurtos_weight, 
+  "Sustracciones de vehículos" = 1.3,
+  "Tráfico de drogas" = 18,
+  "Resto de criminalidad CONVENCIONAL" = 0.25 
+)
+
+```
+
+Now, these **weights** can be used to compute the **Crime Severity Index (CSI)** by using the standard formula and applying the weights to the relative values of the crimes:
+
+```{r}
+# Apply the weights to the relative values of the crimes:
+crime <- delitosf %>%
+  mutate(n = as.numeric(n))   |> 
+  mutate(total_n = sum(n, na.rm = TRUE),  
+    num_relativo = n / total_n,  # getting relative number
+    ponderacion = num_relativo * ponderaciones[tipo_penal]) |> 
+  # applying weights
+    summarise(crime_index = sum(ponderacion))
+
+```
+
+Finally, we add the resulting index to our `pamplona` database.
+
+```{r}
+# Extract crime index value
+crime_value <- crime$crime_index[1]
+
+# Add the crime_index column to pamplonaf
+pamplonaf <- pamplonaf %>%
+  mutate(crime_index = crime_value) 
+
+```
+
+---...----...---...----
+
+### Problema
+
+NOTA: aunque no se pueda hacer por barrios por los crímenes, sí que podríamos hacer un índice general para todo pamplona de criminalidad, pero luego hacer el safety perception diferente para cada barrio. por qué sería diferente? aparte de porque varía por barrio, porque podríamos usar self defense strategies de forma diferente en función del barrio que diga cada persona (una persona suele pensar más en lo que conoce cuando se le pregunta por lo que tiene miedo que no. bueno esto me lo acabo de inventar pero si busco literatura seguro que hay algo que diga algo así).
+
+![](images/Captura%20de%20pantalla%202025-02-26%20a%20las%2017.55.24.png){width="480"}
+
+<https://www.statista.com/statistics/525603/crime-severity-index-in-canada/#>[:\~:text=In%20the%20calculation%20of%20the,on%20changes%20in%20the%20index](https://www.statista.com/statistics/525603/crime-severity-index-in-canada/#:~:text=In%20the%20calculation%20of%20the,on%20changes%20in%20the%20index). The Crime Severity Index (CSI) takes into account both the volume and the seriousness of crime. In the calculation of the CSI, each offence is assigned a weight, derived from average sentences handed down by criminal courts. The more serious the average sentence, the higher the weight for that offence. As a result, more serious offences have a greater impact on changes in the index. All police-reported Criminal Code offences are included in the CSI. Adapted from Statistics Canada, statcan.gc.ca, 2001 to 2022. This does not constitute an endorsement by Statistics Canada of this product.
+
+<https://www150.statcan.gc.ca/n1/daily-quotidien/240725/dq240725b-eng.htm?indid=4751-1&indgeo=0> To determine severity, each crime is assigned a weight. CSI weights are based on the crime's incarceration rate, as well as the average length of prison sentences handed down by criminal courts. More serious crimes are assigned higher weights, while less serious crimes are assigned lower weights. As a result, relative to their volume, more serious crimes have a greater impact on the index.
+
+## Past victimisation
+
+Due to a significant class imbalance in the data, I created a synthetic index to capture whether any form of victimization has ever occurred.
+
+```{r}
+pvictimisation_vars  <- pamplonaf |>  
+  dplyr::select(p5_1, p5_2, p5_3,
+                p5_4, p5_5, p5_6, 
+                p5_7, p5_8, 
+                p6_1, p6_2, p6_3)
+
+# Descriptive analysis
+univariate_analysis(pvictimisation_vars)
+
+pvictimisation_vars[] <- lapply(pvictimisation_vars, 
+                                function(x) as.numeric(as.character(x)))
+
+names(pvictimisation_vars)
+
+```
+
+```{r}
+# Apply the recoding: change 1 (Yes) to 1 and 2 (No) to 0 in pvictimisation_vars
+pvictimisation_vars[] <- lapply(pvictimisation_vars, 
+                                function(x) ifelse(x == 1, 1, 0))
+
+# Synthetic index (unweighted): 1 if at least one victimisation reported, 0 if none
+pvictimisation_vars$victimized <- ifelse(rowSums(pvictimisation_vars[],
+                                                 na.rm = TRUE) > 0, 1, 0)
+
+# Display frequency table of the victimization index
+table(pvictimisation_vars$victimized)
+
+```
+
+Although the original approach involved a simple binary indicator distinguishing between individuals who had or had not experienced victimization, I opted for a more nuanced method: constructing a **weighted victimization index** that reflects not only the presence but also the **severity of the offenses**. Each type of past victimization was assigned a weight based on its relative seriousness, following approximate sentencing guidelines from the Spanish Penal Code. For instance, minor property crimes such as theft received lower weights, while offenses involving physical violence or sexual assault were assigned higher values. This procedure results in a **continuous index** that captures cumulative victimization severity.
+
+| Code | Description | Penal offence | Expected sentence (years) | Weight = x / 0.25 |
+|----|----|----|----|----|
+| p5_1 | Theft w/o violence (bag, etc.) | Hurto \>400€ | 1 | 4 |
+| p5_2 | Robbery with violence | Robo con violencia e intimidación | 3.5 | 14 |
+| p5_3 | Purse-snatching (*tirón*) | Robo con violencia | 3.5 | 14 |
+| p5_4 | Robbery in home | Robo con fuerza agravado | 4 | 16 |
+| p5_5 | Attempted robbery in home | Robo con fuerza menor | 2 | 8 |
+| p5_6 | Theft of mobile phone | Robo con fuerza menor | 2 | 8 |
+| p5_7 | Theft of other electronic device | Robo con fuerza menor | 2 | 8 |
+| p5_8 | Fraud / scam | Estafa | 1 | 4 |
+| p6_1 | Physical aggression | Lesiones | ≈1.1 | ≈4.4 |
+| p6_2 | Threats or coercion | Coacción / amenazas | \~1.0 (if available) | 4 |
+| p6_3 | Sexual aggression | Agresión sexual (1–4 years) | 2.5 | 10 |
+
+```{r}
+# Synthetic index (with weights)
+pesos <- c(
+  p5_1 = 4,      # Hurto >400€
+  p5_2 = 14,     # Robo con violencia
+  p5_3 = 14,     # Tirón
+  p5_4 = 16,     # Robo domicilio agravado
+  p5_5 = 8,      # Robo domicilio leve
+  p5_6 = 8,      # Robo móvil
+  p5_7 = 8,      # Robo dispositivo
+  p5_8 = 4,      # Estafa
+  p6_1 = 2.5,    # Lesiones mixtas (≈0.625y)
+  p6_2 = 4,      # Amenazas / coacciones
+  p6_3 = 10      # Agresión sexual
+)
+
+# Recode 1 (Yes) to 1 and 2 (No) to 0 in pvictimisation_vars
+pvictimisation_vars[] <- lapply(pvictimisation_vars, 
+                                function(x) ifelse(x == 1, 1, 0))
+
+# Ensure variables are numeric
+pvictimisation_vars[] <- lapply(pvictimisation_vars, 
+                                function(x) as.numeric(as.character(x)))
+
+# Apply the weights using sweep (more controlled than mapply in this case)
+weighted_matrix <- sweep(as.matrix(pvictimisation_vars), 2, pesos[names(pvictimisation_vars)], `*`)
+
+# Compute the weighted sum per row
+pvictimisation_vars$victimized_w <- rowSums(weighted_matrix,
+                                            na.rm = TRUE)
+
+```
+
+Given the highly skewed distribution of this index—where most individuals report no victimization and only a minority report severe or repeated offenses—I categorized it into four levels: **none, low, moderate, and severe victimization**. This improves interpretability and allows clearer group comparisons in subsequent regression models.
+
+While both the binary and the weighted approaches are methodologically valid, the latter provides a more detailed representation of victimization experiences. It also allows us to explore whether more severe or repeated victimization exerts a stronger influence on perceived insecurity. This distinction is not merely conceptual, as it may affect model performance, explanatory power, and ultimately, the conclusions.
+
+```{r}
+# Categoric past victimization
+pvictimisation_vars$victim_cat <- cut(
+  pvictimisation_vars$victimized_w,
+  breaks = c(-0.01, 0, 8, 16, Inf),
+  labels = c("none", "low", "moderate", "severe")
+)
+
+table(pvictimisation_vars$victim_cat, 
+      useNA = "ifany")
+
+# Visually checking distribution
+barplot(table(pvictimisation_vars$victim_cat), 
+        col = "steelblue",
+        main = "Distribución de victimización", 
+        ylab = "Frecuencia")
+
+
+# Extract new variable. 
+victimized <- pvictimisation_vars$victim_cat
+
+# Add to pamplonaf
+pamplonaf <- cbind(pamplonaf, victimized)
+
+```
+
+## Building the dependent variable: safety perception
+
+The dependent variable in this study aims to capture individuals’ subjective **perception of insecurity in public space**. This construct is multidimensional, encompassing not only how safe people feel in various contexts but also their emotional responses, behavioral adaptations, and evaluations of their local environment. Consequently, a composite approach is necessary to represent this latent dimension accurately.
+
+The following blocks of the questionnaire were reviewed and selectively included based on their conceptual relevance to the perception of insecurity:
+
+-   **P7 (situational safety perceptions):** these items ask respondents how safe they feel in specific environments (e.g., at home, in parks, in public transport). Items such as **P7_2 to P7_6** were retained as they directly reflect situational insecurity. **P7_7** and **P7_8** measure perception when seeing a police patrol and when seeing people drinking on the street; both were excluded from the main construct as it relates to institutional presence and social estimuli rather than the respondent’s environment per se, and cannot be modeled within the ABM.
+
+    Although **P7_1** captures a form of perceived insecurity, it refers specifically to the private domain of the respondent’s home. As the analytical focus of this study is on public space and collective urban environments, this item was excluded from the perception index to ensure conceptual coherence. Its determinants and implications differ substantially from those related to public insecurity, and including it could introduce interpretive inconsistencies in the latent construct.
+
+-   **P10 (statements of security and avoidance behaviors):**
+
+    -   **P10_1 and P10_2** are retained, as they capture generalized perceptions of safety in the city and neighborhood.
+
+    -   **P10_3 and P10_7**, which involve behavioral self-restraint (e.g., avoiding going out or visiting areas), are interpreted as **self-defense strategies**—behaviors likely resulting from prior insecurity. To avoid endogeneity and maintain conceptual clarity, **self-defense strategies (e.g., avoidance behaviors)** were **excluded from the dependent variable**. While they may result from perceived insecurity, they are also behaviors that agents in the ABM may enact based on model parameters—thus better conceptualized as **outputs or intermediate behaviors**. However, these variables are still included in regression models as **predictors**, in order to assess their statistical association with perceived insecurity and to inform rule development in the ABM.
+
+    -   **P10_4 to P10_6**, which capture attitudes towards surveillance technologies (CCTV), were excluded, as they reflect political or normative beliefs rather than actual insecurity perceptions.
+
+-   **P11 (Global evaluations of safety):** Items P11_1 and P11_2 provide scalar ratings of perceived safety in the respondent’s **neighborhood** and **city**, respectively. These are highly relevant and were included in the composite index as they reflect summary judgments.
+
+-   **P12 (perceived neighborhood degradation and crime):** This variable reflects the respondent’s perception of environmental disorder and local criminality. While not a direct emotional perception, it represents contextual perception of insecurity and is treated as an **explanatory variable** rather than a component of the dependent variable.
+
+-   **P8** and **P9** represent self-protective responses to perceived risk—P8 being a realized action (installing a security system), and P9 a contemplated one (considering relocation). As behavioral outcomes, they were excluded from the construction of the perception index (CATPCA) to avoid conceptual circularity, but are included in regression models to assess their relationship with perceived and contextual insecurity.
+
+```{r}
+perception_vars <- pamplonaf |>  
+  dplyr::select(p7_2, p7_3, 
+                p7_4, p7_5, p7_6,
+                p10_1, p10_2,
+                p11_1, p11_2)
+
+# p13 no se incluyen porque serían incongruentes dentro de un índice de percepción personal o situacional, ya que se refieren a otros barrios, no a la experiencia directa del encuestado, y no necesariamente se refieren a su propio barrio. 
+# p8 y p9 fuera porque mide una consecuencia de la inseguridad y podría crear endogeneidad.
+# p12 mide la evaluación del barrio, que se basa en la percepción, pero no es una medida directa (puedes verlo degradado pero no sentirte inseguro) asi que se usa como predictora en la regresión mejor.
+
+univariate_analysis(perception_vars)
+
+```
+
+### Recoding P11_1 and P11_2
+
+Due to the highly skewed distribution of responses in questions P11_1 and P11_2 (rating security in one's neighborhood and city on a scale from 1 to 10), we implemented and compared three different recoding strategies: (1) conceptually adjacent grouping, (2) empirical quartile-based recoding, and (3) ideal fourths for robustness against skewness and outliers. These strategies were evaluated based on their explanatory power within the CATPCA framework. Below, I detail the conceptual rationale, strengths, and limitations of each approach.
+
+1.  **Adjacent grouping based on conceptual proximity**
+
+This method involves merging adjacent scale points based on semantic similarity and intuitive interpretation. For instance, very low scores (e.g., 1–4) may be grouped as “insecure,” middle scores (5–7) as “moderate,” and high scores (8–10) as “secure.”
+
+This methods aligns closely with how respondents may mentally categorize their answers, preserves the ordinal nature of the variable while enhancing parsimony and facilitates easier interpretation of results. However, it relies on subjective judgments and theoretical assumptions about what constitutes a meaningful category boundary, and there is the risk of losing explanatory power if conceptually grouped categories do not align well with actual distributional patterns.
+
+```{r}
+perception1 <-  perception_vars
+
+# Grouping adjacent categories
+perception1$p11_1r <- ifelse(perception1$p11_1 %in% 1:4, 1, 
+                                  ifelse(perception1$p11_1 %in% 5:7, 2, 3))
+
+perception1$p11_2r <- ifelse(perception1$p11_2 %in% 1:4, 1, 
+                                  ifelse(perception1$p11_2 %in% 5:7, 2, 3))
+
+```
+
+```{r}
+# Running CATPCA to test the results
+perception1 <-  perception1 |> 
+  dplyr::select(-p11_1, -p11_2) 
+
+fitord <- princals(perception1, 
+                   ordinal = T, 
+                   ndim = 3)  ## default is ordinal=TRUE
+
+summary(fitord)
+
+# CATPCA results: 45.71, 59.55, 70.72 (3 first components)
+
+```
+
+2.  **Quartile based encoding**
+
+In this strategy, the 1–10 scale is recoded into four categories based on empirical quartiles, ensuring each group contains approximately 25% of the observations. This approach prioritizes balance across groups rather than theoretical interpretation, ensuring each recoded category has a similar number of cases, improving statistical stability in modeling. Moreover, it is useful when the original distribution is uneven or concentrated in certain score ranges, and reduces subjectivity in decision-making as this method is data-driven and replicable.
+
+However, it may group together values that are semantically distant (e.g., scores of 5 and 8), weakening interpretability. The resulting categories do not always correspond to meaningful levels of perceived safety from a theoretical perspective, so it can distort ordinal relationships if the distribution is extremely skewed.
+
+```{r}
+# Quartile based encoding
+perception2 <- perception_vars 
+
+perception2$p11_1r <- cut(perception2$p11_1, 
+                              breaks = quantile(perception2$p11_1, probs = 0:3 / 3), 
+                              include.lowest = TRUE, 
+                              labels = c("Bajo", "Medio", "Alto"))
+perception2$p11_2r <- cut(perception2$p11_2, 
+                              breaks = quantile(perception2$p11_2, probs = 0:3 / 3), 
+                              include.lowest = TRUE, 
+                              labels = c("Bajo", "Medio", "Alto"))
+
+# checking results
+table(perception2$p11_1r)
+table(perception2$p11_2r)
+
+```
+
+```{r}
+perception2 <-  perception2 |> 
+  dplyr::select(-p11_1, -p11_2) 
+
+fitord <- princals(perception2, 
+                   ordinal = T, 
+                   ndim = 3)  ## default is ordinal=TRUE
+
+summary(fitord)
+
+# CATPCA results: 46.2, 61.62, 71.12 (3 first components)
+
+```
+
+3.  **Ideal Fourths (Robust Quartiles)**
+
+The interquartile range (IQR) is a widely used metric for capturing the central dispersion of a distribution and is often employed for data recoding purposes. However, in the presence of **skewed distributions** or **outliers**, the traditional IQR can be insufficient to accurately reflect the central tendency. This is due to its reliance on quartile boundaries that may themselves be distorted by extreme values. To address this limitation, the use of **Ideal Fourths (IF)** is proposed as a more robust alternative. As discussed in Hopkins and Glass (1978), and Wilcox (2017), ideal fourths offer a modified approach to quartile calculation that minimizes the influence of extreme values, providing a more resilient measure of central dispersion.
+
+In the present study, the **perception of insecurity is not evenly distributed**, but rather clustered in the mid to low range of the scale. The Ideal Fourths approach yields **categories that are more representative of the actual dispersion and shape of the data**. Therefore, **recoding via Ideal Fourths** produced a **more skewed distribution**, with a higher concentration of observations in the "Low" and "Medium" categories, and relatively fewer in the "High" category. This reflects the method’s ability to downweight the influence of outliers and capture the core of the distribution more faithfully.
+
+**Cita del artículo**:
+
+> Hopkins, J., & Glass, G. (1978). **Estadística robusta aplicada a las medidas de localización y escala**. *Nota Técnica*. Recuperado de: [ResearchGate](https://www.researchgate.net/publication/343779974_Estadistica_robusta_aplicada_a_las_medidas_de_localizacion_y_escala_Nota_Tecnica#pf5).
+
+```{r}
+perception3 <- perception_vars 
+
+# Ideal quartile recoding
+# First, we sort the data
+p111_sorted <- sort(perception3$p11_1)
+
+# Total number of observations
+n <- length(p111_sorted)
+
+# Compute j and h for ideal quartiles (Tukey's rule)
+j <- round((n / 4) + (5 / 12))
+h <- (n / 4) + (5 / 12) - j
+
+# Calculate the ideal lower and upper quartiles
+qi <- (1 - h) * p111_sorted[j] + h * p111_sorted[j + 1]
+qs <- (1 - h) * p111_sorted[n - j + 1] + h * p111_sorted[n - j]
+
+# Print the ideal quartile values
+cat("Cuartil inferior (qi):", qi, "\n")
+cat("Cuartil superior (qs):", qs, "\n")
+
+
+# Recode the variable p11_1 using the ideal quartiles
+perception3$p11_1r_recoded_ideal <- cut(perception3$p11_1, 
+                                            breaks = c(min(perception3$p11_1), qi, qs, max(perception3$p11_1)),
+                                            include.lowest = TRUE, 
+                                            labels = c("Bajo", "Medio", "Alto"))
+
+# View the distribution of the new categories
+table(perception3$p11_1r_recoded_ideal)
+
+
+# Inspect values in each category
+# Category "Low"
+bajo_values <- subset(perception3, p11_1r_recoded_ideal == "Bajo")
+summary(bajo_values$p11_1)
+
+# Category "Medium"
+medio_values <- subset(perception3, p11_1r_recoded_ideal == "Medio")
+summary(medio_values$p11_1)
+
+# Category "High"
+alto_values <- subset(perception3, p11_1r_recoded_ideal == "Alto")
+summary(alto_values$p11_1)
+
+```
+
+```{r}
+# Ideal quartile recoding
+# First, we sort the data
+p112_sorted <- sort(perception3$p11_2)
+
+# Total number of observations
+n <- length(p112_sorted)
+
+# Compute j and h for ideal quartiles (Tukey's rule)
+j <- round((n / 4) + (5 / 12))
+h <- (n / 4) + (5 / 12) - j
+
+# Calculate the ideal lower and upper quartiles
+qi2 <- (1 - h) * p112_sorted[j] + h * p112_sorted[j + 1]
+qs2 <- (1 - h) * p112_sorted[n - j + 1] + h * p112_sorted[n - j]
+
+# Print the ideal quartile values
+cat("Cuartil inferior (qi):", qi2, "\n")
+cat("Cuartil superior (qs):", qs2, "\n")
+
+
+# Recode the variable p11_2 using the ideal quartiles
+perception3$p11_2r_recoded_ideal <- cut(perception3$p11_2, 
+                                            breaks = c(min(perception3$p11_2), qi2, qs2, max(perception3$p11_2)),
+                                            include.lowest = TRUE, 
+                                            labels = c("Bajo", "Medio", "Alto"))
+
+# View the distribution of the new categories
+table(perception3$p11_2r_recoded_ideal)
+
+
+# Inspect values in each category
+# Category "Low"
+bajo_values <- subset(perception3, p11_2r_recoded_ideal == "Bajo")
+summary(bajo_values$p11_2)
+
+# Category "Medium"
+medio_values <- subset(perception3, p11_2r_recoded_ideal == "Medio")
+summary(medio_values$p11_2)
+
+# Category "High"
+alto_values <- subset(perception3, p11_2r_recoded_ideal == "Alto")
+summary(alto_values$p11_2)
+
+```
+
+```{r}
+perception3 <-  perception3 |> 
+  dplyr::select(-p11_1, -p11_2) 
+
+fitord <- princals(perception3, 
+                   ordinal = T, 
+                   ndim = 3)  ## default is ordinal=TRUE
+
+summary(fitord)
+
+# CATPCA results: 44.81, 60.76, 71.03 (3 first components)
+
+```
+
+After carrying out the different analysis, running the CATPCA models and observed the results, it has been proven that the **quartile based encoding was the best performing recode method**:
+
+-   Adjacent grouping based on conceptual proximity. CATPCA results were 45.71, 59.55 and 67.37 percent of variance explained for the first three components.
+
+-   **Quartile based encoding. CATPCA results were 46.2, 61.62, and 71.12 percent of variance explained for the first three components.**
+
+-   Ideal fourths. CATPCA results were 44.81, 60.76, and 71.03 percent of variance explained for the first three components.
+
+```{r}
+rm(perception2)
+
+# Quartile based encoding
+perception2 <- perception_vars 
+
+perception2$p11_1r <- cut(perception2$p11_1, 
+                              breaks = quantile(perception2$p11_1, probs = 0:3 / 3), 
+                              include.lowest = TRUE, 
+                              labels = c("Bajo", "Medio", "Alto"))
+perception2$p11_2r <- cut(perception2$p11_2, 
+                              breaks = quantile(perception2$p11_2, probs = 0:3 / 3), 
+                              include.lowest = TRUE, 
+                              labels = c("Bajo", "Medio", "Alto"))
+
+# checking results
+table(perception2$p11_1r)
+table(perception2$p11_2r)
+
+```
+
+### Dimensionality reduction: CATPCA
+
+```{r}
+fitord <- princals(perception2, 
+                   ordinal = T, 
+                   ndim = 3)  ## default is ordinal = TRUE
+
+summary(fitord)
+
+```
+
+One of the key methodological decisions in principal component analysis is determining how many components to retain. In this study, the first two components account for approximately **63.4% of the total variance**, while the inclusion of a third component raises that figure to **72.9%**.
+
+**Retaining only two components** provides a more parsimonious model and facilitates interpretation and integration into subsequent models, as we plan on doing with the regressions and the ABM. However, it entails discarding potentially meaningful variation. On the other hand, **retaining three components**, allows for a more nuanced understanding of the underlying structure of perceived insecurity. It distinguishes between different domains of perception (personal, institutional, and environmental) and better reflects the complexity of the phenomenon, though it introduces additional interpretive and computational layers. I have opted to retain only two components, since the total variance they account for is statistically enough and, for the present research, I prioritize a parsimonious model rather than a complex one.
+
+-   **Component 1** reflects **general urban insecurity**, particularly in public and semi-public spaces such as commercial areas, solitary streets, and nightlife zones. It also includes general evaluations of security in one's neighborhood and city. This component represents the core emotional and experiential dimension of perceived insecurity, meaning, how unsafe people feel in the places where they live and move.
+
+-   **Component 2** captures a sense of **institutional or service-related insecurity**. It includes feelings of insecurity in public facilities, like community centers, and in public transportation. This dimension likely reflects a breakdown in the implicit trust citizens place in infrastructure and public institutions as protectors of safety.
+
+The numerical **loadings** associated with each variable in the CATPCA output indicate the **strength and direction of the association** between that variable and a given component, and they provide both directional and magnitude information. Loadings above **±0.70** are considered strong contributors to the component, loadings between ±0.40 and ±0.69 are considered moderate, and loadings between ±0.25 and ±0.39 may still be interpretable if theoretically meaningful.
+
+**Component 1 (general urban insecurity)** is anchored by both **specific spatial perceptions** (isolated streets and parks, commercial areas, and nightlife zones) and **generalized urban insecurity**. The inverse loadings from p10_1, p10_2, p11_1r, and p11_2r (which are inverse because the item is framed in terms of **feeling safe**) indicate that **higher scores on this component correspond to stronger feelings of insecurity** in both local and city-level settings.
+
+**Component 2 (institutional and service-based insecurity)** reflects insecurity in contexts where safety is expected by design, such as public buildings (libraries, sport centers, etc.) and public transport, places that usually should convey more protection, possibly due to past incidents, social cues, or poor maintenance. The weak-moderate cross-loading variables, such as the ones referred to the safety feeling in the city and the neighborhood, add context but is less distinctive.
+
+> Although the original security evaluation items (p11_1 and p11_2) showed strong and expected negative loadings in Component 1 they also displayed moderate positive loadings in Component 2. This apparent inconsistency in direction does not indicate a problem with the recoding or the conceptual structure of the model. Rather, it reflects a common feature of CATPCA: variables may load differently across orthogonal components depending on how their variance aligns with distinct latent dimensions. In this case, p11_1 and p11_2 are not dominant in Component 2, but share a minor portion of their variance with the insecurity expressed in institutional spaces. This can occur for at least two reasons: first, individuals who feel unsafe in public services may not necessarily rate their city or neighborhood as unsafe overall; and second, the opposite may also be true: some individuals may report positive global evaluations of their neighborhood or city while still experiencing insecurity in specific institutional settings, possibly due to personal experiences in those spaces. The moderate positive loadings of these items thus reflect a weak but statistically detectable pattern of association, which does not undermine the overall interpretation of Component 2 as focused on situational insecurity in environments expected to offer protection and order.
+
+```{r}
+# Checking component loadings
+fitord$loadings
+
+```
+
+The **biplot** is a two-dimensional representation of the relationships between the original variables and the first two principal components extracted by CATPCA. It offers a geometric visualization of the multivariate data structure, enabling us to assess how variables relate to the underlying dimensions, to one another, and to the total explained variance. In the plot below we can see:
+
+-   **p7_3, p7_4, and p7_5** form a tight cluster pointing almost purely along Component 1. These are **core indicators of spatial insecurity in public places**, and their alignment confirms that Component 1 represents general urban fear.
+
+-   **p7_2 and p7_6** are projected at approximately 45° upward to the right, combining moderate contributions to both components. These vectors define **Component 2**, associated with **insecurity in institutional or service environments**.
+
+-   **p10_1 and p10_2** (statements of feeling safe in city/neighborhood) point in the opposite direction to p7_3–p7_5, consistent with their **strong inverse loadings**: high agreement with these items indicates **low** insecurity.
+
+```{r}
+# Loadings plot or biplot 
+plot(fitord, "loadplot", 
+     main = "Loadings Plot ABC Data")  ## aspect ratio = 1
+
+```
+
+The **scree plot** displays the **eigenvalues** associated with each component extracted during the CATPCA process. An eigenvalue reflects the **amount of variance in the data accounted for by that component**. This plot is essential for deciding how many components to retain. T
+
+Before the elbow, each additional component adds substantial new explanatory power. After the elbow, each additional component adds minimal variance, and may be driven by noise or overfitting. Component 1 shows an eigenvalue 5.2, while component 2 has an eigenvalue around 1.7. **The curve flattens considerably after Component 2, suggesting that retaining two components is both empirically justified and methodologically parsimonious.** This aligns with classical PCA rules (e.g., Kaiser criterion: retain components with eigenvalue \> 1) and with the logic of dimensional reduction in social science research: retain only meaningful, interpretable axes.
+
+```{r}
+# Screeplot
+plot(fitord, "screeplot")
+
+```
+
+Together, the scree plot and biplot offer a cross-validation: while the scree plot justifies keeping only two components, the biplot shows that these two components already capture distinct conceptual dimensions (urban spatial insecurity and institutional/service insecurity).
+
+# Building linear regression models
+
+As stated earlier, I chose the first two components.
+
+```{r}
+# Extract component scores. 
+component_scores <- fitord$objects[, 1:2]
+
+# Rename columns for clarity. 
+colnames(component_scores) <- c("gen_ins", "inst_ins")
+
+# Add to pamplonaf
+pamplonaf <- cbind(pamplonaf, component_scores)
+  # pamplonaf <- pamplonaf |> dplyr::select(-gen_ins, -inst_ins)
+
+pampre <- pamplonaf |> 
+  dplyr::select(-p5_1, -p5_2, -p5_3, 
+                -p5_4, -p5_5, -p5_6, 
+                -p5_7, -p5_8, 
+                -p6_1, -p6_2, -p6_3, 
+                -p7_2, -p7_3, 
+                -p7_4, -p7_5, -p7_6, 
+                -p10_1, -p10_2, 
+                -p11_1, -p11_2) |> 
+  mutate(crime_index = as.numeric(crime_index))
+
+```
+
+After extracting the component scores from the CATPCA, it was important to examine the relationship between the resulting dimensions. Since Principal Components Analysis (including its categorical variant) produces orthogonal components by design, we expected the new variables to be uncorrelated. To confirm this, I computed the pairwise Pearson correlations between the first two CATPCA components. The results are shown in the following correlation matrix.
+
+The near-zero correlations among the components confirm their **orthogonality**, validating their use as independent dimensions in further analyses.
+
+```{r}
+cor(pampre[, c("gen_ins", "inst_ins")], use = "complete.obs")
+
+```
+
+Given that these components represent distinct yet potentially related aspects of the underlying constructs, it is appropriate to use them simultaneously as dependent variables in a **multivariate multiple regression framework**. This approach allows me to assess how a set of predictors influences each component, while also testing for overall effects across the multivariate outcome space.
+
+## Processing predictors before the regressions
+
+Before running the multiple regression analysis, I recoded the sociodemographic variables (income, education, and employment) to reduce the number of categories. This ensures model stability and improve interpretability, as categorical predictors with many levels can lead to sparse data in some categories, inflating standard errors and reducing statistical power.
+
+```{r}
+# recoding INCOME, EDUCATION, EMPLOYMENT to reduce the number of categories
+pampre <- pampre |> 
+  # EDUCATION: categories 3 and 4 are both secundary education, collapsed into one cat. 
+  mutate(education = case_when(education %in% c("1", "2") ~ "1",
+    education %in% c("3", "4") ~ "2",
+    education == "5" ~ "3",
+    TRUE ~ education  # Keep all other values unchanged
+  )) |> 
+  mutate(education = as.ordered(education))
+
+pampre <- pampre |> 
+  # EMPLOYMENT: categories 3 and 4 are both secundary employment, collapsed into one cat. 
+  mutate(employment = case_when(employment %in% c("1", "2") ~ "1",
+    employment %in% c("3", "4") ~ "2",
+    employment %in% c("6", "7", "8") ~ "3",
+    TRUE ~ employment  # Keep all other values unchanged
+  )) |> 
+  mutate(employment = as.ordered(employment))
+
+pampre <- pampre |> 
+  # INCOME 
+  mutate(income = case_when(income %in% c("1", "2") ~ "1",
+    income %in% c("3", "4") ~ "2",
+    income %in% c("5", "6", "7") ~ "3",
+    income %in% c("8", "9", "10") ~ "4",
+    TRUE ~ income  # Keep all other values unchanged
+  )) |> 
+  mutate(income = as.ordered(income))
+
+```
+
+While developing the model in GAMA, I noticed that the shapefile used to represent Pamplona (downloaded directly from the official website of the Pamplona city center) included only 13 neighborhoods, whereas the survey data referenced 14. The neighborhood Azpilagaña was missing from the shapefile so, due to geographical proximity, it was merged with Milagrosa-Arrosadia in all the variables related to neighborhood identification (`barrio`, `p13a`, and `p13b`).
+
+```{r}
+# Combine neighborhoods 8 and 9
+pampre <- pampre %>%
+  mutate(
+    barrio = case_when(
+                    barrio %in% c("8", "9") ~ "8", 
+                     barrio == "10" ~ "9", 
+                     barrio == "11" ~ "10",
+                      barrio == "12" ~ "11",
+                      barrio == "13" ~ "12", 
+                     barrio == "14" ~ "13", 
+                      TRUE ~ barrio),
+    p13a = case_when(p13a %in% c("8", "9") ~ "8", 
+                     p13a == "10" ~ "9", 
+                      p13a == "11" ~ "10",
+                      p13a == "12" ~ "11",
+                      p13a == "13" ~ "12", 
+                     p13a == "14" ~ "13", 
+                      TRUE ~ p13a),
+    p13b = case_when(p13b %in% c("8", "9") ~ "8", 
+                     p13b == "10" ~ "9", 
+                     p13b == "11" ~ "10",
+                     p13b == "12" ~ "11",
+                     p13b == "13" ~ "12", 
+                     p13b == "14" ~ "13",
+                      TRUE ~ p13b),
+    barrio = factor(barrio, levels = as.character(1:13)),
+    p13a = factor(p13a, levels = as.character(1:13)),
+    p13b = factor(p13b, levels = as.character(1:13)))
+
+```
+
+Now, I ensure that each variable is appropriately encoded according to its measurement level. Ordinal variables, such as attitudes and sociodemographic indicators like education and income, are converted into ordered factors. Binary variables are recoded into a 0/1 format. Continuous variables are standardized using Z-scores, allowing for comparability across predictors with different scales and improving model convergence.
+
+```{r}
+# Converting ordinal variables to ordered factors
+make_ordered <- function(data, vars) {
+  for (var in vars) {
+    data[[var]] <- as.ordered(data[[var]])
+  }
+  return(data)
+}
+
+pampre <- make_ordered(pampre, c("p7_1", "p7_7", "p7_8",
+                                 "p10_3", "p10_4", "p10_5", "p10_6", "p10_7", 
+                                 "p12", "p15", "p19",
+                                 "employment", "education", "income",
+                                 "victimized"))
+
+# Re-encodes binary variables to 0/1. This recodes 1 to 1 and 2 to 0, so maybe consider changing this
+recode_binary <- function(data, vars, value_to_keep = 1, new_value = 1, other_value = 0) {
+  for (var in vars) {
+    data[[var]] <- ifelse(data[[var]] == value_to_keep, new_value, other_value)
+  }
+  return(data)
+}
+
+pampre <- recode_binary(pampre, c("gender", "nationality",  
+                                         "p8", "p9","p16"))
+
+# Standardizes numeric variables using Z-scores
+pampre$crime_index_z <- scale(pampre$crime_index)
+pampre$agez <- scale(pampre$age)
+pampre$agez <- as.numeric(pampre$agez)
+
+pampre$p14z <- scale(pampre$p14) # es una escala del 1 al 10 pero como no la trato como ordinal (no sé si debería, la trato como numérica y la escalo)
+pampre$gen_ins1 <- scale(pampre$gen_ins)
+pampre$gen_ins1 <- as.numeric(pampre$gen_ins1)
+
+# Cleaning up the dataset by removing unstandardized columns
+pampre <- pampre |> 
+  dplyr::select(-crime_index, -p14)
+
+```
+
+## Multivariate regression
+
+To ensure analytical clarity and theoretical coherence, the independent variables in this model are introduced in blocks, based on their conceptual function and proximity to the dependent variables. This approach aligns with best practices in multivariate modeling, particularly when the regression model serves as a foundation for rule-based simulations in agent-based models (ABMs).
+
+### Building the model
+
+Age, gender, education level, income, employment status, nationality and neighborhood are introduced first. These variables reflect relatively stable characteristics of individuals and are going to be used as **agent attributes** in ABM environments. They help account for basic heterogeneity in perception patterns and are essential for establishing baseline variation.
+
+> hacer las dos pruebas. para hacer las tres a la vez (no multivariante): <https://library.virginia.edu/data/articles/getting-started-with-multivariate-multiple-regression>
+
+```{r}
+modelo_mv <- lm(cbind(gen_ins1, inst_ins) ~ agez + gender + education + income + employment + nationality + barrio, data = pampre)
+
+# Wilks & Pillai tests are robust and measure if there is a significant global effect. If it is, individual effects can be assessed.
+summary(manova(modelo_mv), test = "Wilks")
+summary(manova(modelo_mv), test = "Pillai")
+
+summary(modelo_mv)
+
+```
+
+**Experiential variables.**
+
+Such as past victimization or self-protection behaviors.
+
+```{r}
+modelo_mv <- lm(cbind(gen_ins, inst_ins) ~ agez + gender + education + income + employment + nationality + barrio + victimized + p10_3 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9, data = pampre)
+
+summary(modelo_mv)
+
+```
+
+**Contextual variables.**
+
+Such as trust in institutions or perceived environmental degradation, which represent broader cognitive evaluations or interpretations of one’s environment. **While they may not be directly simulated in the ABM, they are essential for capturing higher-order cognitive processing and may inform the probabilistic decision rules governing agent behavior.**
+
+```{r}
+# Final theoretical adjusted model 
+modelo_mv <- lm(cbind(gen_ins, inst_ins) ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9, data = pampre)
+
+summary(modelo_mv)
+
+```
+
+#### Evaluating other models
+
+Given that the final model includes two conceptually distinct but correlated outcomes (`gen_ins` and `inst_ins`), variable selection was performed separately for each component using univariate regression methods. The final multivariate specification was then constructed by combining predictors that demonstrated relevance for at least one of the two outcomes. This approach ensures that the multivariate model captures the unique and shared variance across both dimensions of insecurity perception.
+
+```{r}
+# Model formula for gen_ins
+form_gen <- gen_ins ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9
+
+# Store original model matrix columns
+original_gen <- lm(form_gen, data = pampre)
+
+ols_step_forward_p(original_gen) # adj R2 0.503. 19 vars. gender included
+ols_step_forward_aic(original_gen) # adj R2 0.497. 14 vars. gender included
+ols_step_backward_aic(original_gen) # adj R2 0.50. 10 vars. gender NOT included
+
+```
+
+```{r}
+# Model formula for inst_ins
+form_inst <- inst_ins ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9
+
+# Store original model matrix columns
+original_inst <- lm(form_inst, data = pampre)
+
+ols_step_forward_p(original_inst) #  adj R2 0.188. 11 vars. gender included
+ols_step_forward_aic(original_inst) #  adj R2 0.188 11 vars. gender included
+ols_step_backward_aic(original_inst) #  adj R2 0.188 14 vars. gender NOT included
+
+```
+
+### Cross validation
+
+Although the analysis incorporates classical explanatory tools the core objective of this study is **exploratory and predictive** rather than strictly confirmatory. While explanatory models aim primarily to estimate unbiased effects and test hypotheses about variable relationships, predictive models focus on minimizing error in future observations. This work, which sits at the intersection of these two goals, benefits substantially from integrating cross-validation into the analytical workflow. **Cross-validation (CV) serves to evaluate how well a model trained on one subset of data generalizes to unseen data**.
+
+Here, we have already estimated the final coefficients using linear regression models, which tell the direction and strength of associations between predictors and the outcomes and are supported by inferential tools like p-values and confidence intervals (including robust and bootstrap-adjusted versions, which will be used later on). However, **these statistics alone do not tell how well the model will perform outside the sample used to fit it**. This is where cross-validation becomes essential: it helps **ensure that the patterns captured are not the result of overfitting**, which is particularly important given the relatively high number of predictors and the presence of many categorical variables. Even when multicollinearity and residual diagnostics are within acceptable thresholds (which they are, as is also later assessed in the Final Model section), a model might still “memorize” noise specific to the sample. This would artificially inflate R² and make coefficients appear more stable than they actually are.
+
+This first code chunk defines a function `get_rare_levels()` that identifies levels within categorical variables that occur very infrequently (in this case, fewer than or equal to 2 times). These rare levels can cause instability in model training and prediction, particularly during resampling procedures like cross-validation, as they may appear only in training or only in testing subsets, leading to **rank-deficient fits** or **missing factor levels**. The function iterates over all variables and collects the problematic levels.
+
+Once the rare levels are identified, the rows from the dataset that include these rare categories are **filtered out**. This ensures that the subsequent data split does not produce training and testing sets with incompatible factor structures, which could prevent model fitting or yield misleading results. After filtering, the data is cleaned again using `droplevels()` to eliminate unused factor levels, ensuring that only meaningful levels are retained, as failure to remove orphaned levels can affect model interpretation and prediction.
+
+```{r}
+# Function to identify rare levels in all factor/character variables
+get_rare_levels <- function(data, threshold = 2) {
+  rare_levels <- list()
+  
+  for (var in names(data)) {
+    if (is.factor(data[[var]]) || is.character(data[[var]])) {
+      level_counts <- table(data[[var]])
+      rare <- names(level_counts[level_counts <= threshold])
+      if (length(rare) > 0) {
+        rare_levels[[var]] <- rare
+      }
+    }
+  }
+  
+  return(rare_levels)
+}
+
+# Identifying rare levels 
+rare_levels_full <- get_rare_levels(pampre, threshold = 2)
+
+# Delete rows with rare levels
+rows_to_keep <- rep(TRUE, nrow(pampre))
+
+for (var in names(rare_levels_full)) {
+  rows_to_keep <- rows_to_keep & !(pampre[[var]] %in% rare_levels_full[[var]])
+}
+
+pampre_filtered <- pampre[rows_to_keep, ]
+
+# Deleting categories with rare levels
+pampre_filtered[] <- lapply(pampre_filtered, function(x) {
+  if (is.factor(x)) droplevels(x) else x
+})
+
+```
+
+Then, the function `get_empty_levels()` is defined to check whether any factor levels present in the training data are completely absent in the testing data. This verification is crucial after the training/testing split because it confirms that all categories expected by the model are represented when making predictions. If any level is missing in the testing set, the model would not be able to generate predictions for those observations, again leading to errors or unreliable estimates.
+
+```{r}
+# Function to verify empty levels in the test
+get_empty_levels <- function(train, test) {
+  vars <- names(train)
+  empty_in_test <- list()
+  
+  for (var in vars) {
+    if (is.factor(train[[var]])) {
+      test_levels <- unique(test[[var]])
+      missing <- setdiff(levels(train[[var]]), test_levels)
+      if (length(missing) > 0) {
+        empty_in_test[[var]] <- missing
+      }
+    }
+  }
+  
+  return(empty_in_test)
+}
+
+```
+
+The third chunk implements a function called `repeat_split()`, which tries up to 100 times to randomly split the dataset into training and testing sets (80/20) while avoiding any imbalanced distribution of categorical levels. Each attempt sets a new random seed to ensure diverse partitions. This process is designed to protect the validity of cross-validation: without balanced splits, performance metrics may be biased by artificial distributional differences.
+
+```{r}
+repeat_split <- function(data, response, p = 0.80, max_tries = 100, seed = 123) {
+  set.seed(seed)  # Setting an external seed to ensure reproducibility
+  
+  for (i in 1:max_tries) {
+    current_seed <- seed + i
+    set.seed(current_seed)
+    
+    in_train <- createDataPartition(data[[response]], p = p, list = FALSE)
+    train <- data[in_train, ]
+    test  <- data[-in_train, ]
+    
+    missing_levels <- get_empty_levels(train, test)
+    
+    if (length(missing_levels) == 0) {
+      message("✅ Successful split on try ", i, " (seed = ", current_seed, ")")
+      return(list(train = train, test = test, seed = current_seed, attempt = i))
+    }
+  }
+  stop("❌ Could not create a balanced split after ", max_tries, " attempts.")
+}
+
+# Fixed seed
+split_result <- repeat_split(pampre_filtered, response = "gen_ins", seed = 456)
+training <- split_result$train
+testing  <- split_result$test
+
+get_empty_levels(training, testing)
+
+```
+
+Then, the cross-validation is carried out: it sets up a 5-fold, 3-repeat cross-validation strategy. The models being compared include a full model (with all theoretically relevant variables) and a forward-selected model chosen earlier, each applied separately to `gen_ins` and `inst_ins`. A **linear regression (lm)** is applied. Even though CV is implemented separately for each dependent variable in this stage (due to the lack of native multivariate CV procedures en the `caret` package), this is statistically justified: the goal is not to predict a multivariate outcome per se, but to **ensure that both individual outcome models perform reliably** and are grounded in a consistent and interpretable predictor structure.
+
+After training, predictions are generated on the test set for each of the four models. The `postResample()` function then calculates three key performance metrics: **Root Mean Square Error (RMSE)**, **R-squared (coefficient of determination)**, and **Mean Absolute Error (MAE)**. These metrics give a tangible measure of how well each model predicts out-of-sample responses. RMSE penalizes large errors, MAE reflects average absolute deviation, and R-squared gives a sense of the proportion of variance explained in the test set.
+
+```{r}
+set.seed(123)
+
+# CV control 
+ctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 3)
+
+# gen_ins models
+model_gen_full <- gen_ins ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9
+
+model_gen_forward <- gen_ins ~ agez + gender  + income + nationality + employment + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_6 + p12 + p15 + p16 + p13a + p13b + p14z + p7_7 + p8 + p9
+
+# inst_ins models
+model_inst_full = inst_ins ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9
+
+model_inst_forward <- inst_ins ~ agez + gender  + income + nationality + employment + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_6 + p12 + p15 + p16 + p13a + p13b + p14z + p7_7 + p8 + p9
+
+# Training the models 
+gen_model_full     <- train(model_gen_full, data = training, method = "lm", trControl = ctrl, preProc = c("center", "scale", "zv"))
+gen_model_forward  <- train(model_gen_forward, data = training, method = "lm", trControl = ctrl, preProc = c("center", "scale", "zv"))
+inst_model_full    <- train(model_inst_full, data = training, method = "lm", trControl = ctrl, preProc = c("center", "scale", "zv"))
+inst_model_forward <- train(model_inst_forward, data = training, method = "lm", trControl = ctrl, preProc = c("center", "scale", "zv"))
+
+# Predictions
+test_results <- data.frame(
+  gen_ins  = testing$gen_ins,
+  inst_ins = testing$inst_ins
+)
+
+test_results$gen_pred_full     <- predict(gen_model_full, testing)
+test_results$gen_pred_forward  <- predict(gen_model_forward, testing)
+test_results$inst_pred_full    <- predict(inst_model_full, testing)
+test_results$inst_pred_forward <- predict(inst_model_forward, testing)
+
+# Testing the model
+gen_full_perf     <- postResample(test_results$gen_pred_full,     test_results$gen_ins)
+gen_forward_perf  <- postResample(test_results$gen_pred_forward,  test_results$gen_ins)
+inst_full_perf    <- postResample(test_results$inst_pred_full,    test_results$inst_ins)
+inst_forward_perf <- postResample(test_results$inst_pred_forward, test_results$inst_ins)
+
+
+```
+
+From the results obtained, the forward-selected models showed a better performance for both the general insecurity (`gen_ins`, R-squared of 0.42, RMSE 0.76, MAE 0.62) and the institutional security (`inst_ins`, R-squared 0.07, RMSE 0.98, MAE 0.77). Therefore, this set of predictors was the one chosen for our final model.
+
+```{r}
+# DF with results
+results_table <- data.frame(
+  Model = c("gen_full", "gen_forward", "inst_full", "inst_forward"),
+  RMSE = c(gen_full_perf["RMSE"], gen_forward_perf["RMSE"],
+           inst_full_perf["RMSE"], inst_forward_perf["RMSE"]),
+  Rsquared = c(gen_full_perf["Rsquared"], gen_forward_perf["Rsquared"],
+               inst_full_perf["Rsquared"], inst_forward_perf["Rsquared"]),
+  MAE = c(gen_full_perf["MAE"], gen_forward_perf["MAE"],
+          inst_full_perf["MAE"], inst_forward_perf["MAE"])
+)
+
+print(results_table)
+
+```
+
+### Final Model
+
+```{r}
+modelo_mv <- lm(cbind(gen_ins, inst_ins) ~ agez + gender  + income + nationality + employment + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_6 + p12 + p15 + p16 + p13a + p13b + p14z + p7_7 + p8 + p9, data = pampre) # este modelo es incluso mejor que el de antes, pero si lo paso por CV es peor... asi q mejor me quedo como estoy + p13a*gender + p10_3*barrio + p7_7*p14z
+
+summary(modelo_mv)
+```
+
+The multivariate tests (Wilks’ Lambda and Pillai’s Trace) assess whether each independent variable has a **statistically significant effect on the system of dependent variables** (`gen_ins` (general insecurity) and `inst_ins` (institutional insecurity)). Unlike univariate regressions, these tests consider the **correlation structure between the dependent variables** and provide a more global assessment. In both tests, almost all variables exhibit statistically significant multivariate effects, except for `employment`, `p10_4` (opinion on security cameras), `p16` (past experience of neighborhood conflicts) and `p9` (changing neighborhoods for safety). On variable, `p13b` (rating of the most insecure neighborhoods) was significant only at p \< 0.1.
+
+These tests confirm that the selected variables **jointly explain variation across both dimensions of perceived insecurity**, justifying the use of multivariate regression over separate univariate models.
+
+```{r}
+# Wilks & Pillai tests are robust and measure if there is a significant global effect. If it is, individual effects can be assessed.
+summary(manova(modelo_mv), test = "Wilks")
+summary(manova(modelo_mv), test = "Pillai")
+
+```
+
+#### Global tests (MANOVA)
+
+The first response variable, `gen_ins`, captures the emotional and spatial dimension of perceived insecurity. **Adjusted R² = 0.5069** indicates a strong explanatory power, and the model is statistically significant (**F(63, 764) = 14.49, p \< 2.2e-16**).
+
+The second response variable, `inst_ins`, reflects insecurity in spaces that should be institutionally safeguarded (public services, transport, etc.). The model has lower explanatory power: although **adjusted R² = 0.174**, the model is still statistically significant (**F(63, 764) = 3.765, p = 2.2e-16**).
+
+Overall, the **model for `gen_ins`** is stronger, both in explanatory power and coherence, suggesting that emotional and spatial insecurity is more systematically shaped by the covariates used in these models. **Victimization, p7_8, and p14z** are consistent and strong predictors across both models, and the **differences between models justify the decision to treat these two components separately** rather than collapsing them into a single index.
+
+```{r}
+summary(modelo_mv)
+
+```
+
+#### Multicollinearity
+
+To assess multicollinearity among the independent variables included in the regression models predicting the two CATPCA components (`gen_ins` and `inst_ins`), we computed **Generalized Variance Inflation Factors (GVIFs)** following the method proposed by Fox and Monette (1992). This extension of traditional VIF diagnostics is particularly suited to models that include categorical variables with multiple degrees of freedom, such as `barrio` or grouped attitudinal scales.
+
+Because raw GVIF values increase with the number of degrees of freedom, we relied on the standardized metric **GVIF\^(1/(2\*Df))** for interpretation, which rescales the inflation factor and allows for comparability across variables. In both models, all adjusted GVIFs remained comfortably below the conventional threshold of **2.0**, indicating that **multicollinearity is not a concern** in the final specification. In the present model, **all predictors met this criterion except for `agez`**, which had an adjusted GVIF of **2.02**. While this slightly exceeds the recommended threshold, it does not raise major concerns in the absence of known suppressor effects or coefficient instability.
+
+Given the role of this model in generating behaviorally meaningful coefficients for agent-based simulation, maintaining low multicollinearity is crucial to ensure both **numerical stability and interpretability**. Based on these results, no predictors were excluded on the basis of multicollinearity.
+
+It is important to note that VIFs are computed once per model and depend solely on the relationships among the independent variables; they do not need to be recalculated for each dependent variable, nor is it necessary to run VIFs for each possible subset of predictors. That is why we decided to compute VIF only for `gen_ins`.
+
+```{r}
+# multicollinearity
+car::vif(lm(gen_ins ~ agez + gender + education + income + employment + nationality + barrio + victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 + p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9, data = pampre))
+
+```
+
+#### Residual distribution
+
+To evaluate whether the assumptions of multivariate normality were met, we applied the Royston test to the residuals of the multivariate linear model. The results indicated a statistically significant deviation from multivariate normality (H = 36.59, p \< .001), suggesting that the residuals do not follow a multivariate normal distribution. Univariate normality tests (Anderson-Darling) for the individual response variables further confirmed significant departures from normality in `inst_ins` (A-D = 2.29, p \< .001), and with moderate skewness and kurtosis, but not in `gen_ins` (A-D = 0.52, p \> .001).
+
+Given the large sample size (n = 828), and the general robustness of linear models to mild normality violations, especially in estimation contexts, we consider these deviations non-critical. However, to ensure the robustness of our inference under non-normal and potentially heteroscedastic residuals, we estimated both **heteroscedasticity-consistent standard errors (HC1)** and **percentile bootstrap confidence intervals**. Robust standard errors provide adjusted t-values and p-values commonly used in regression diagnostics, while the bootstrap approach offers empirical confidence intervals that do not rely on parametric assumptions. The convergence between both methods (in terms of direction, magnitude, and significance) reinforces the stability of the estimates and their suitability for rule-based simulation in ABM.
+
+```{r}
+# residual distribution
+MVN::mvn(residuals(modelo_mv), 
+         mvnTest = "royston")
+
+```
+
+> Each coefficient was interpreted in terms of its estimated effect size and direction, statistical significance under heteroscedasticity-consistent standard errors (HC1), and the extent to which the estimate was supported by percentile bootstrap confidence intervals. A coefficient was considered robust if it remained significant (p \< .05) under HC1, and if the 95% bootstrap interval excluded zero and contained the point estimate. Goodness-of-fit metrics such as R² and the F-statistic were extracted from the conventional `lm()` summary, and used descriptively, as they are unaffected by variance adjustments or bootstrapping.
+
+Given the violation of multivariate normality and univariate normality for the residuals of both outcome models, **robust standard errors (HC1)** were computed to ensure valid inference. This changes the standard errors and significance tests, as they are computed using heteroscedasticity-consistent estimators (HC1), providing robust inference for coefficient interpretation. Therefore, the coefficient estimates remain the same (because OLS is still used); standard errors, t-values, and p-values change and the new p-values are more reliable when residuals are not normally distributed.
+
+```{r}
+# Get robust standard errors
+coeftest(modelo_mv, 
+         vcov = vcovHC(modelo_mv, type = "HC1"))
+
+table(pampre$victimized)
+```
+
+To assess the stability and uncertainty of the estimated coefficients under minimal parametric assumptions, we computed **percentile bootstrap confidence intervals** based on 5,000 resamples of the original dataset. The bootstrap procedure involved repeated estimation of the regression model on resampled data, storing the coefficients for each iteration. For example, for the variable `gender`, the 95% percentile confidence interval was **[–0.4488, –0.2197]**, suggesting a statistically significant and negative association with general insecurity (`gen_ins`). This result confirms that, controlling for all other covariates, women report higher levels of perceived insecurity in public space than men. The bootstrap approach provides robust inference by bypassing the need for normally distributed residuals or homoscedasticity, which were previously found to be violated in diagnostic testing.
+
+```{r}
+library(boot)
+
+# Define model formula
+form_gen <- gen_ins ~ agez + gender + education + income + employment + nationality + barrio +
+  victimized + p7_1 + p7_8 + p10_3 + p10_4 + p10_5 + p10_6 +
+  p12 + p15 + p16 + p13a + p13b + p18 + p19 + p14z + p7_7 + p8 + p9
+
+# Store original model matrix columns
+original_fit <- lm(form_gen, data = pampre)
+coef_names <- names(coef(original_fit))
+
+# Bootstrap function
+boot_fn <- function(data, indices) {
+  d <- data[indices, ]
+  fit <- try(lm(form_gen, data = d), silent = TRUE)
+  
+  if (inherits(fit, "try-error")) {
+    return(rep(NA, length(coef_names)))  # Fill with NAs if it breaks
+  }
+  
+  coefs <- coef(fit)
+  full_coefs <- setNames(rep(NA, length(coef_names)), coef_names)
+  full_coefs[names(coefs)] <- coefs
+  return(full_coefs)
+}
+
+# Run bootstrap
+set.seed(123)
+results <- boot(data = pampre, statistic = boot_fn, R = 5000)
+
+# Check names to confirm index
+names(results$t0)
+
+# Get bootstrap CI for gender (or any other variable)
+boot.ci(results, type = "perc", index = which(names(results$t0) == "p7_8.Q"))
+
+```
+
+# GAMA MODELING
+
+The following elements are specific to the development of the agent-based model (ABM) in GAMA. They include key preparatory steps such as creating a stratified sample to reflect the demographic composition of the agents, fixing and cleaning the Pamplona shapefile (.shp) to ensure accurate spatial representation of neighbourhood boundaries, and computing a composite safety score for each neighbourhood based on survey data.
+
+## Creating a stratified sample
+
+Here, I prepare a synthetic sample of agents from survey data to be used in the ABM. It begins by selecting key sociodemographic and attitudinal variables, creating age categories, and drawing a stratified random sample of 20% from each age group within each neighborhood. Neighborhood identifiers are then replaced with meaningful names, including the fusion of two neighborhoods (8 and 9) into a single category, "Ermitagaña-Mendebaldea," since they are also grouped together in the shapefile that I will be using in GAMA. The resulting dataset is cleaned and exported as a CSV file.
+
+```{r}
+# Testing if they have the same order
+all(pamplonaf$edad == pampre$edad)  # O cualquier otra variable común
+
+# Adding p10_1 and p10_2
+pampre$p10_1 <- pamplonaf$p10_1
+pampre$p10_2 <- pamplonaf$p10_2
+
+# creating IDs for traceability 
+pampre$id <- paste0("agent_", 1:nrow(pampre))
+
+```
+
+```{r}
+
+rm(agents)
+set.seed(123)  # Set seed for reproducibility
+
+# Prepare a sample of agents from the survey data
+agents <- pampre %>%
+  mutate(p14z = as.numeric(p14z)) |>  
+  dplyr::select(gender, nationality, victimized, barrio, gen_ins,
+                p7_8, age, p10_1, p10_2, id) |> 
+  dplyr::mutate(barrio_res = case_when(  # Replace barrio IDs with descriptive names
+                                    barrio == "1" ~ "Iturrama",
+                                    barrio == "2" ~ "San Juan/Donibane",
+                                    barrio == "3" ~ "Casco Viejo/Alde Zaharra",
+                                    barrio == "4" ~ "Ensanche/Zabalgunea",
+                                    barrio == "5" ~ "Milagrosa-Arrosadia",
+                                    barrio == "6" ~ "Rochapea/Arrotxapea",
+                                    barrio == "7" ~ "Mendillorri",
+                                    barrio == "8" ~ "Ermitaga�a-Mendebaldea",
+                                    barrio == "9" ~ "San Jorge-Sanduzelai",
+                                    barrio == "10" ~ "Txantrea",
+                                    barrio == "11" ~ "Etxabakoitz",
+                                    barrio == "12" ~ "Lezkairu",
+                                    barrio == "13" ~ "Buztintxuri-Euntzetxiki"
+                                  ),
+                barrio_res = as.factor(barrio_res)) |> 
+  group_by(gender, barrio_res) %>% # Stratify by gender and neighborhood
+  sample_frac(0.2) |>  # Sample 20% of each group
+  ungroup() |> 
+  dplyr::select(-barrio)  
+
+```
+
+### Extracting the parameters
+
+In agent-based modeling, initializing agents with realistic and heterogeneous behavioral parameters is essential for capturing individual-level variability. Initially, I considered assigning each agent a predicted value of the `gen_ins` index based on a linear regression model, where each agent's perception of unsafety would be computed from the fixed coefficients of sociodemographic predictors (e.g., gender, age).
+
+However, this approach only provides the population mean prediction, neglecting the uncertainty and heterogeneity present in the real data. Given the presence of heteroscedasticity in the residuals (as indicated by diagnostic tests), I opted for a more statistically sound method by leveraging bootstrapped coefficient distributions. This approach preserves the empirical variation of each coefficient and allows me to sample individualized parameters for agents from these distributions. It avoids the unrealistic assumption of homoscedastic and normally distributed errors, thereby providing a richer and more robust initialization of agent-specific values in the simulation.
+
+```{r}
+assign_effect <- function(var_name, condition_value, agent_var, agents_df, results_obj, n_agents, seed = 123) {
+  # Get index of the variable in results$t0
+  var_index <- which(names(results_obj$t0) == var_name)
+  
+  # Extract and clean bootstrap values
+  bootstrap_vals <- na.omit(results_obj$t[, var_index])
+  
+  # Set seed for reproducibility
+  set.seed(seed)
+  
+  # Sample one value per agent (optional use)
+  sampled_effects <- sample(bootstrap_vals, size = n_agents, replace = TRUE)
+  
+  # Assign effect only where condition is met
+  effect <- ifelse(
+    agents_df[[agent_var]] == condition_value,
+    sample(bootstrap_vals, size = nrow(agents_df), replace = TRUE),
+    0
+  )
+  
+  return(effect)
+}
+
+```
+
+```{r}
+n_agents <- 167
+
+# Gender
+agents$gender_effect <- assign_effect("gender", "1", "gender", agents, results, n_agents)
+
+# Nationality
+agents$nationality_effect <- assign_effect("nationality", "1", "nationality", agents, results, n_agents)
+
+# Previous victimization
+agents$victimized_effect <- assign_effect("victimized.L", "low", "victimized", agents, results, n_agents)
+
+# P_7_8, encontrarse gente haciendo botellón
+agents$p7_8_effect <- assign_effect("p7_8.L", "2", "p7_8", agents, results, n_agents)
+
+```
+
+#### Walking alone at night
+
+Now, I construct an individual-level sensitivity index related to perceived insecurity when walking alone at night in dark areas. This variable is derived from the first component used in the CATPCA, where negative loadings indicate increased perceived insecurity. For interpretative consistency within the ABM, I invert the original signs, transforming them into positive weights so that higher values reflect greater sensitivity to darkness.
+
+The responses to items p10_1 and p10_2—both ordinal variables measured on a four-point Likert scale—are rescaled onto a [0,1] interval, assuming a roughly **interval-like interpretation** of ordinal distances. Each item is then **weighted** according to its loading from the CATPCA model, and a **small individual error term** is incorporated (normally distributed with mean 0 and SD 0.025) to represent **unobserved heterogeneity** in agent-level sensitivity. The final index is a **linear combination** of the two weighted and perturbed components, yielding a continuous measure of perceived vulnerability to darkness.
+
+```{r}
+set.seed(123)  # Set seed for reproducibility
+
+# Loadings from CATPCA (originally negative; signs inverted to indicate increasing insecurity)
+weight_p10_1 <- 0.770
+weight_p10_2 <- 0.752
+
+agents <- agents %>%
+  mutate(
+    # Recode p10_1 responses to a normalized scale from 0.0 (not afraid) to 1.0 (very afraid)
+    p10_1_scaled = case_when(
+      p10_1 == "4" ~ 0.0,
+      p10_1 == "3" ~ 0.33,
+      p10_1 == "2" ~ 0.66,
+      p10_1 == "1" ~ 1.0,
+      TRUE ~ NA_real_
+    ),
+    # Recode p10_2 responses similarly
+    p10_2_scaled = case_when(
+      p10_2 == "4" ~ 0.0,
+      p10_2 == "3" ~ 0.33,
+      p10_2 == "2" ~ 0.66,
+      p10_2 == "1" ~ 1.0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Compute item-specific sensitivity with added random noise (normally distributed error)
+    darksens_b = p10_1_scaled * weight_p10_1 + rnorm(n(), 0, 0.025),
+    darksens_c = p10_2_scaled * weight_p10_2 + rnorm(n(), 0, 0.025),
+    
+    # Aggregate total sensitivity index
+    darksens = darksens_b + darksens_c
+  )
+
+```
+
+#### Number of people that is "botellonero"
+
+Now, I create `is_botellonero`, a variable indicating whether each individual is considered a "botellonero": a person who engages in group drinking in public spaces, commonly associated with youth social behavior in Spain.
+
+To define the age range of potential *botelloneros* in the simulation model, I rely on the latest findings from the 2024 edition of the *Encuesta sobre Alcohol y Drogas en España (EDADES)*, published by the **Observatorio Español de las Drogas y las Adicciones (OEDA)**. According to this report, the practice of *botellón* is clearly influenced by age, with **30.8% of individuals aged 15 to 24 years** reporting participation in the past 12 months, it is a phenomenom becoming almost residual among older age groups, such as those between 55 and 64 years (0.6%). Based on this evidence, the model includes as potential *botelloneros* individuals aged **between 16 and 25 years**, allowing the simulation to realistically reflect the sociodemographic concentration of *botellón* participation in Spain.
+
+The condition for being classified as a "botellonero" is twofold: the person must be between 14 and 24 years old, and must also fall within a 20% probability threshold.
+
+> ```         
+> Observatorio Español de las Drogas y las Adicciones (OEDA). (2024). Encuesta sobre Alcohol y Drogas en España (EDADES), 2023–2024: Informe. Ministerio de Sanidad. https://pnsd.sanidad.gob.es/profesionales/sistemasInformacion/sistemaInformacion/pdf/2024_Informe_EDADES.pdf
+> ```
+
+```{r}
+#  ESTO HAY QUE QUITARLO PORQUE FINALMENTE NO SE HACE
+# agents$is_botellonero <- ifelse(agents$age >= 15 & agents$age <= 24 & runif(nrow(agents)) < 0.2, TRUE, FALSE)
+
+```
+
+```{r}
+# Final clean-up 
+agents_clean <- agents |> 
+  dplyr::select(-age) |> 
+  mutate(is_botellonero = case_when(is_botellonero == TRUE ~ "1", is_botellonero == FALSE ~ "0"))
+
+rownames(agents_clean) <- NULL  # Remove row names
+agents_clean <- as.data.frame(agents_clean, stringsAsFactors = FALSE)
+colnames(agents_clean)  # Check column names
+
+# Export to CSV, ready to use in GAMA
+readr::write_csv(agents, "gama_agents.csv")   
+
+```
+
+### Creating the crime index proxy
+
+#### Composite safety score for each neighborhood
+
+Now, I calculate a **composite safety score** for each neighborhood based on survey responses to two questions: which neighborhood is perceived as the safest (`p13a`) and which as the most unsafe (`p13b`). Since each respondent picked **only one barrio**, I treat the **number of times each barrio was chosen** as a proxy for positive perception (p13a) or a proxy for negative perception (`p13b`). Then, these counts can be normalized into proportions or scores, creating the composite score:​
+
+$Safety Score= \frac{\text{Votes}_\text{safe}}{\text{Total Votes}} - \frac{\text{Votes}_\text{unsafe}}{\text{Total Votes}}$
+
+The resulting score reflects overall public perception, with higher values indicating barrios perceived as safer.
+
+```{r}
+# Creating a tibble for all categories 
+categorias <- tibble(p13b = factor(as.character(1:13), 
+                                   levels = as.character(1:13)))
+categorias1 <- tibble(p13a = factor(as.character(1:13), 
+                                    levels = as.character(1:13)))
+
+# Counting data
+count_unsafe <- pampre |> 
+  dplyr::select(p13b) |> 
+  group_by(p13b) |> 
+  summarise(casos_p13b = n(), 
+            .groups = "drop")
+
+count_safe <- pampre |> 
+  dplyr::select(p13a) |> 
+  group_by(p13a) |> 
+  summarise(casos_p13a = n(), 
+            .groups = "drop")
+
+# Left_join to ensure all categories are present
+votes_unsafe <- categorias |> 
+  left_join(count_unsafe, by = "p13b") |> 
+  mutate(casos_p13b = replace_na(casos_p13b, 0)) |> 
+  arrange(p13b) |> pull()
+
+votes_safe <- categorias1 |> 
+  left_join(count_safe, by = "p13a") |> 
+  mutate(casos_p13a = replace_na(casos_p13a, 0)) |> 
+  arrange(p13a) |> pull()
+
+
+# Normalize by total responses (or use raw counts if sample size constant)
+total_votes_safe <- sum(votes_safe)
+total_votes_unsafe <- sum(votes_unsafe)
+
+safe_prop <- votes_safe / total_votes_safe
+unsafe_prop <- votes_unsafe / total_votes_unsafe
+
+# Composite score: higher = safer
+composite_score <- safe_prop - unsafe_prop
+
+# Create data frame for mapping
+barrio_scores <- data.frame(
+  barrio_id = 1:13,
+  votes_safe = votes_safe,
+  votes_unsafe = votes_unsafe,
+  safe_prop = safe_prop,
+  unsafe_prop = unsafe_prop,
+  safety_score = composite_score
+) 
+
+```
+
+```{r}
+# Add the crime_index column to pamplonaf
+crime_index <- sample(pamplonaf$crime_index, 
+                      size = 13)
+
+barrio_scores <-  barrio_scores |> 
+  dplyr::mutate(real_crime_proxy = safety_score * crime_index,
+                crime_index = crime_index,
+                barrio_id = case_when(  # Replace barrio IDs with descriptive names
+                                    barrio_id == "1" ~ "Iturrama",
+                                    barrio_id == "2" ~ "San Juan/Donibane",
+                                    barrio_id == "3" ~ "Casco Viejo/Alde Zaharra",
+                                    barrio_id == "4" ~ "Ensanche/Zabalgunea",
+                                    barrio_id == "5" ~ "Milagrosa-Arrosadia",
+                                    barrio_id == "6" ~ "Rochapea/Arrotxapea",
+                                    barrio_id == "7" ~ "Mendillorri",
+                                    barrio_id == "8" ~ "Ermitaga�a-Mendebaldea",
+                                    barrio_id == "9" ~ "San Jorge-Sanduzelai",
+                                    barrio_id == "10" ~ "Txantrea",
+                                    barrio_id == "11" ~ "Etxabakoitz",
+                                    barrio_id == "12" ~ "Lezkairu",
+                                    barrio_id == "13" ~ "Buztintxuri-Euntzetxiki"
+                                  ))
+
+barrio_clean <- barrio_scores |> 
+  dplyr::select(barrio_id, safety_score, real_crime_proxy)
+
+readr::write_csv(barrio_clean, "gama_barrio.csv")  
+
+```
+
+## Fixing the .shp file
+
+The spatial data used in this simulation model comes from an `.osm` (OpenStreetMap) file obtained via the Google Street Maps API. This `.osm` file was first processed using **QGIS**, where the relevant **layers were extracted and exported as separate shapefiles**, specifically, buildings and roads. Once this was accomplished, I used R to clean and classify building data for better integration with the simulation. The aim is to **improve realism** in the model (e.g., residents live in actual residences, work in real workplaces) and enable functionalities like placing “botelloneros” in parks.
+
+In addition, the neighborhood boundaries shapefile was obtained from the official website of the Pamplona City Council.
+
+### Neighborhoods' limits
+
+In this case, I opted to merge the neighborhoods of Azpilagaña and Milagrosa-Arrosadia from the shapefile used in the GAMA simulation model, as only one of them was included in the survey dataset. To ensure alignment between the spatial and survey data, I combined the missing neighborhood with an adjacent one that was present in the database. The decision was primarily based on **geographical proximity**, which ensures spatial continuity in the model. Additionally, I conducted a check of basic **sociodemographic indicators available at the official Pamplona's website** (such as age structure, educational attainment, migrant presence, and gender distribution). While indicators like youth population and the proportion of residents without formal education might suggest closer alignment with a different neighboring area, the overall profile across variables confirmed that Azpilagaña and Milagrosa-Arrosadia are more similar to each other than to the next alternative.
+
+```{r}
+# Reading the shapefile containing neighborhood boundaries
+shp <- st_read("URBA_Pol_Barrios/URBA_Pol_Barrios.shp")
+
+# Creating a new grouping variable to merge selected neighborhoods
+shp <- shp |> 
+  mutate(grupo = if_else(ID %in% c(0, 9), 
+                         "fusionado",
+                         as.character(ID)))
+
+# Group by the new variable and merge geometries, keeping relevant attributes
+shp_union <- shp |> 
+  group_by(grupo) |> 
+  summarise(across(where(~!inherits(.x, "sfc")), first),
+            .groups = "drop",
+            geometry = st_union(geometry))
+
+# Keeping the rest of the shapefile and merge it with the new grouped area
+shp_rest <- shp[!shp$ID %in% c(0, 9), ]
+
+shp_final <- rbind(shp_rest, shp_union) |> 
+  distinct(ID, 
+           .keep_all = T) |> 
+  arrange(ID) |> 
+  mutate(BARRIO = case_when(BARRIO == "Azpilagaña" ~ "Milagrosa-Arrosadia", 
+                            TRUE ~ BARRIO)) |> 
+  dplyr::select(-grupo)
+
+# Saving the updated shapefile with the merged neighborhood, ready to use in GAMA
+# st_write(shp_final, "pamplona_barrios.shp")
+
+```
+
+### Building types
+
+This chunk imports the building shapefile and classifies each polygon into one of three functional categories: "residence", "leisure", or "work_place".
+
+```{r}
+# Reading the shapefile containing buildings
+edificios <- st_read("edif2.shp")
+
+# Creating a new grouping variable to classify buildings by type
+edificios <- edificios |> 
+  mutate(bldng_t = case_when(buildng %in% c("apartments", "residential", "house",
+                                            "semidetached_house", "detached") ~ "residence",
+                             buildng %in% c("terrace", "greenhouse", "commercial",
+                                            "religious", "church", "public", 
+                                            "civic", "chapel", "cathedral", 
+                                            "stadium") ~ "leisure",
+                             buildng %in% c("industrial", "hotel", "hospital", "office",
+                                            "college", "warehouse", "government",
+                                            "kindergarten", "university",
+                                            "fire_station", "townhall") ~ "work_place",
+                             TRUE ~ buildng))
+
+# Saving the updated shapefile with the buildings
+# st_write(edificios, "edificios.shp", append = FALSE)
+
+```
+
+### Parks and squares: "parques"
+
+I filter out buildings whose names indicate that they are parks or public squares. These areas are essential in the simulation as they are used to place nightlife groups (botelloneros).
+
+```{r}
+# Reading the shapefile containing parks
+parques <- st_read("edif2.shp")
+
+# Creating a new grouping variable to define parks
+parques <- parques |> 
+  filter(str_detect(name, "Plaza|Parque")) |> 
+  mutate(building_type = "parque")
+
+# Saving the updated shapefile with the parks
+# st_write(parques, "parques.shp", append = FALSE)
+
+```
+
+### Lightning scores per neighborhood
+
+Here I construct a neighborhood-level lighting intensity index for Pamplona, in order to quantify how much lighting is present in each neighborhood, not just by counting the number of streetlights but by taking into account their electric power.
+
+After arranging each streetlight to its corresponding neighborhood, I sum the power (`POTENCIA`) of all lamps within each neighborhood, giving a total light output per neighborhood (`pot_total`). Then, I normalize by area (in square kilometers) to get a lighting density per km² (`lum_por_km2`), which allows for comparability across neighborhoods of different sizes. Finally, a min-max normalization is applied to obtain an index (`lum_index_norm`) ranging from 0 to 1. The normalized lighting index is particularly appropriate in modeling frameworks where the relative spatial distribution of illumination is more meaningful than absolute power values. Moreover, its use in an ABM as mine, where I study perceived insecurity in public spaces, this standardized index facilitates comparative analysis across neighborhoods.
+
+```{r}
+# Load streetlight and neighborhood shapefiles
+farolas <- st_read("NO USO/ALUM_Pto_PuntosLuz/ALUM_Pto_PuntosLuz.shp")
+barrios <- st_read("data for GAMA/osm and shapefiles/pamplona_barrios/pamplona_barrios.shp")
+
+# Check and align Coordinate Reference Systems (CRS)
+st_crs(farolas)
+st_crs(barrios)
+
+# Transform the streetlights layer to match the CRS of neighborhoods
+farolas <- st_transform(farolas, st_crs(barrios))
+
+# Perform spatial join to assign each lamp to its corresponding neighborhood polygon
+farolas_por_barrio <- st_join(farolas, barrios, left = FALSE)
+
+# Count the number of lamps per neighborhood
+conteo_farolas <- farolas_por_barrio |> 
+  count(BARRIO) 
+
+# Calculate area (in km2) for each neighborhood
+barrios_area <- barrios |> 
+  mutate(area_km2 = as.numeric(st_area(geometry)) / 1e6)
+
+# For each neighborhood:
+lum_area <- farolas_por_barrio |> 
+  group_by(BARRIO) |> 
+  # sum the power of all lamps (`pot_total`)
+  summarise(pot_total = sum(POTENCIA, na.rm = TRUE)) |> 
+  # join with the area data
+  st_join(barrios_area |> 
+            dplyr::select(BARRIO, area_km2), by = "BARRIO") |> 
+  # compute lighting per km2
+  mutate(lum_por_km2 = pot_total / area_km2,
+         # normalize it between 0 and 1
+         lum_index_norm = (lum_por_km2 - min(lum_por_km2)) / (max(lum_por_km2) - min(lum_por_km2)))
+
+```
+
+# SENSITIVITY ANALYSIS
+
+```{r}
+bot0 <- read.csv("Thesis GAMA/models/sens_botellon_summary0.csv")
+bot1 <- read.csv("Thesis GAMA/models/sens_botellon_summary1.csv")
+bot2 <- read.csv("Thesis GAMA/models/sens_botellon_summary2.csv")
+bot3 <- read.csv("Thesis GAMA/models/sens_botellon_summary3.csv")
+bot4 <- read.csv("Thesis GAMA/models/sens_botellon_summary4.csv")
+
+bot <- bind_rows(bot0, bot1, bot2, bot3, bot4)
+
+quantile25
+quantile50
+avg_pred_women
+quantile75
+bot <- bot |> rename(quantile.resident.collect.each.prediction = quantile25,
+              X0.25. = quantile50,
+              quantile.resident.collect.each.prediction.1 = quantile75,
+              X0.5. = avg_pred_women) |> 
+  dplyr::select(-quantile.resident.collect.each.prediction.2, -X0.75., -mean..resident.where..each.gender...0...collect.each.prediction.)
+
+```
+
+```{r}
+cw0 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary0.csv")
+cw1 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary1.csv")
+cw2 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary2.csv")
+cw3 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary3.csv")
+cw4 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary4.csv")
+cw5 <- read.csv("Thesis GAMA/models/sens_crime_weight_summary5.csv")
+
+cw <- bind_rows(cw0, cw1, cw2, cw3, cw4, cw5)
+
+bot <- bot |> rename(quantile.resident.collect.each.prediction = quantile25,
+              X0.25. = quantile50,
+              quantile.resident.collect.each.prediction.1 = quantile75,
+              X0.5. = avg_pred_women) |> 
+  dplyr::select(-quantile.resident.collect.each.prediction.2, -X0.75., -mean..resident.where..each.gender...0...collect.each.prediction.)
+
+```
+
+# problemas resueltos
+
+tengo que descubrir bien como interpretar gen_ins, qué significa valor positivo y qué significa valor negativo. Hecho eso, podré identificar los coeficientes de la regresión, porque no tiene sentido que género, ser mujer reduzca -0.33 gen_ins:
+
+**Component 1 (general urban insecurity)** is anchored by both **specific spatial perceptions** (isolated streets and parks, commercial areas, and nightlife zones) and **generalized urban insecurity**. The inverse loadings from p10_1, p10_2, p11_1r, and p11_2r (which are inverse because the item is framed in terms of **feeling safe**) indicate that **higher scores on this component correspond to stronger feelings of insecurity** in both local and city-level settings.
+
+```         
+gender       -0.4866663  0.0703552  -6.917 9.41e-12 ***
+```
+
+RESUELTO: las variables binarias se han codificado al revés: el 1 sigue siendo 1 y el 2 se convierte en 0, cuando debería haber sido 1 a 0 y 2 a 1.
+
+"La variable `gender` muestra un efecto significativo sobre la inseguridad percibida (`gen_ins`). Con el grupo de referencia siendo las mujeres, los hombres presentan una percepción significativamente menor de inseguridad (β = −0.374, p \< 0.001), controlando por el resto de factores incluidos en el modelo."
